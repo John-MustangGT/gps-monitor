@@ -99,6 +99,80 @@ impl GpsGuiApp {
         }
     }
 
+    fn render_main_data_panel(&self, ui: &mut egui::Ui, data: &GpsData) {
+        ui.strong("📍 Position & Movement");
+        ui.separator();
+
+        // Position section
+        egui::Grid::new("position_grid")
+            .num_columns(2)
+            .spacing([10.0, 8.0])
+            .show(ui, |ui| {
+                ui.label("Latitude:");
+                ui.monospace(Self::format_coordinate(data.latitude));
+                ui.end_row();
+
+                ui.label("Longitude:");
+                ui.monospace(Self::format_coordinate(data.longitude));
+                ui.end_row();
+
+                ui.label("Altitude:");
+                ui.monospace(Self::format_value(data.altitude, "m"));
+                ui.end_row();
+
+                if let Some(accuracy) = data.accuracy {
+                    ui.label("Accuracy:");
+                    ui.monospace(format!("{:.1} m", accuracy));
+                    ui.end_row();
+                }
+            });
+
+        ui.add_space(10.0);
+
+        // Movement section
+        egui::Grid::new("movement_grid")
+            .num_columns(2)
+            .spacing([10.0, 8.0])
+            .show(ui, |ui| {
+                ui.label("Speed:");
+                ui.monospace(Self::format_value(data.speed, "km/h"));
+                ui.end_row();
+
+                ui.label("Course:");
+                ui.monospace(Self::format_value(data.course, "°"));
+                ui.end_row();
+            });
+
+        ui.add_space(10.0);
+
+        // Signal Quality section (if GPS data available)
+        if data.satellites.is_some() || data.hdop.is_some() || data.fix_quality.is_some() {
+            ui.strong("📡 Signal Quality");
+            ui.separator();
+            
+            egui::Grid::new("quality_grid")
+                .num_columns(2)
+                .spacing([10.0, 8.0])
+                .show(ui, |ui| {
+                    if let Some(sats) = data.satellites {
+                        ui.label("Satellites:");
+                        ui.monospace(format!("{}", sats));
+                        ui.end_row();
+                    }
+
+                    if let Some(hdop) = data.hdop {
+                        ui.label("HDOP:");
+                        ui.monospace(format!("{:.1}", hdop));
+                        ui.end_row();
+                    }
+
+                    ui.label("Fix Type:");
+                    ui.monospace(data.get_fix_description());
+                    ui.end_row();
+                });
+        }
+    }
+
     fn render_satellite_panel(&self, ui: &mut egui::Ui, data: &GpsData) {
         ui.strong("🛰 Satellites");
         ui.separator();
@@ -284,80 +358,6 @@ impl eframe::App for GpsGuiApp {
                 });
             });
         });
-    }
-
-    fn render_main_data_panel(&self, ui: &mut egui::Ui, data: &GpsData) {
-        ui.strong("📍 Position & Movement");
-        ui.separator();
-
-        // Position section
-        egui::Grid::new("position_grid")
-            .num_columns(2)
-            .spacing([10.0, 8.0])
-            .show(ui, |ui| {
-                ui.label("Latitude:");
-                ui.monospace(Self::format_coordinate(data.latitude));
-                ui.end_row();
-
-                ui.label("Longitude:");
-                ui.monospace(Self::format_coordinate(data.longitude));
-                ui.end_row();
-
-                ui.label("Altitude:");
-                ui.monospace(Self::format_value(data.altitude, "m"));
-                ui.end_row();
-
-                if let Some(accuracy) = data.accuracy {
-                    ui.label("Accuracy:");
-                    ui.monospace(format!("{:.1} m", accuracy));
-                    ui.end_row();
-                }
-            });
-
-        ui.add_space(10.0);
-
-        // Movement section
-        egui::Grid::new("movement_grid")
-            .num_columns(2)
-            .spacing([10.0, 8.0])
-            .show(ui, |ui| {
-                ui.label("Speed:");
-                ui.monospace(Self::format_value(data.speed, "km/h"));
-                ui.end_row();
-
-                ui.label("Course:");
-                ui.monospace(Self::format_value(data.course, "°"));
-                ui.end_row();
-            });
-
-        ui.add_space(10.0);
-
-        // Signal Quality section (if GPS data available)
-        if data.satellites.is_some() || data.hdop.is_some() || data.fix_quality.is_some() {
-            ui.strong("📡 Signal Quality");
-            ui.separator();
-            
-            egui::Grid::new("quality_grid")
-                .num_columns(2)
-                .spacing([10.0, 8.0])
-                .show(ui, |ui| {
-                    if let Some(sats) = data.satellites {
-                        ui.label("Satellites:");
-                        ui.monospace(format!("{}", sats));
-                        ui.end_row();
-                    }
-
-                    if let Some(hdop) = data.hdop {
-                        ui.label("HDOP:");
-                        ui.monospace(format!("{:.1}", hdop));
-                        ui.end_row();
-                    }
-
-                    ui.label("Fix Type:");
-                    ui.monospace(data.get_fix_description());
-                    ui.end_row();
-                });
-        }
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
