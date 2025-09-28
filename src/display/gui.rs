@@ -37,37 +37,21 @@ impl GuiDisplay {
         let data_clone = Arc::clone(&data);
         let running_clone = Arc::clone(&running);
 
-        // Spawn GUI thread
-        let gui_handle = std::thread::spawn(move || -> Result<()> {
-            let options = eframe::NativeOptions {
-                viewport: egui::ViewportBuilder::default()
-                    .with_inner_size([800.0, 600.0])
-                    .with_title("GPS Monitor"),
-                ..Default::default()
-            };
+        // Spawn GUI thread (eframe must run on main thread, so we'll handle this differently)
+        let options = eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size([800.0, 600.0])
+                .with_title("GPS Monitor"),
+            ..Default::default()
+        };
 
-            let app = GpsGuiApp::new(data_clone, running_clone, tx);
-            eframe::run_native("GPS Monitor", options, Box::new(|_cc| Box::new(app)))
-                .map_err(GpsError::from)
-        });
-
-        // Wait for GUI to signal shutdown or handle Ctrl+C
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
-                println!("Shutting down...");
-                running.store(false, Ordering::Relaxed);
-            }
-            _ = tokio::task::spawn_blocking(move || {
-                let _ = rx.recv(); // Wait for GUI to close
-            }) => {
-                running.store(false, Ordering::Relaxed);
-            }
+        let app = GpsGuiApp::new(data_clone, running_clone, tx);
+        
+        // Run eframe - this blocks until the window is closed
+        match eframe::run_native("GPS Monitor", options, Box::new(|_cc| Ok(Box::new(app)))) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(GpsError::Other(format!("GUI error: {}", e))),
         }
-
-        // Wait for GUI thread to complete
-        let result = gui_handle.join().map_err(|_| GpsError::Other("GUI thread panicked".to_string()))?;
-        result?;
-        Ok(())
     }
 }
 

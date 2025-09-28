@@ -71,23 +71,13 @@ impl GpsMonitor {
             
             if force_gui || (should_use_gui() && !_force_terminal) {
                 let gui_display = GuiDisplay::new();
-                gui_display.run(Arc::clone(&self.data), Arc::clone(&self.running)).await?;
-            } else {
-                let terminal_display = TerminalDisplay::new();
-                terminal_display.run(Arc::clone(&self.data), Arc::clone(&self.running)).await?;
+                return gui_display.run(Arc::clone(&self.data), Arc::clone(&self.running)).await;
             }
         }
 
-        #[cfg(not(all(unix, not(target_os = "macos"), feature = "gui")))]
-        {
-            if force_gui {
-                return Err(GpsError::Other("GUI support not compiled in. Build with --features gui".to_string()));
-            }
-            let terminal_display = TerminalDisplay::new();
-            terminal_display.run(Arc::clone(&self.data), Arc::clone(&self.running)).await?;
-        }
-
-        Ok(())
+        // Default to terminal display
+        let terminal_display = TerminalDisplay::new();
+        terminal_display.run(Arc::clone(&self.data), Arc::clone(&self.running)).await
     }
 
     /// Connect to a GPS device via serial port

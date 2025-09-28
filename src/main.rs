@@ -58,12 +58,10 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Check for GUI requirements
+    #[cfg(not(all(unix, not(target_os = "macos"), feature = "gui")))]
     if cli.gui {
-        #[cfg(not(all(unix, not(target_os = "macos"), feature = "gui")))]
-        {
-            eprintln!("Error: GUI support not compiled in. Build with --features gui");
-            std::process::exit(1);
-        }
+        eprintln!("Error: GUI support not compiled in. Build with --features gui");
+        std::process::exit(1);
     }
 
     match cli.command {
