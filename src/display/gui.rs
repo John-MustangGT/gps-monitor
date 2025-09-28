@@ -1,4 +1,4 @@
-// src/display/gui.rs v13
+// src/display/gui.rs v14
 //! GUI display implementation using egui
 
 #[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
@@ -188,94 +188,114 @@ impl GpsGuiApp {
         ui.label(format!("📊 {} used / {} visible", used_count, total_count));
         ui.add_space(5.0);
 
-        // Satellite list in a scrollable area
+        // Satellite table in a scrollable area
         egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-            // Group satellites by constellation
-            let grouped_sats = data.satellites_by_constellation();
+            // Filter out satellites below horizon and sort by constellation then PRN
+            let mut visible_satellites: Vec<_> = data.satellites_info.iter()
+                .filter(|sat| {
+                    // Keep satellites that have elevation data and are above horizon (>= 0°)
+                    sat.elevation.map_or(true, |el| el >= 0.0)
+                })
+                .collect();
             
-            for (constellation, satellites) in grouped_sats {
-                // Constellation header with symbol
-                let constellation_symbol = match constellation.as_str() {
-                    "GPS" => "🇺🇸",
-                    "GLONASS" => "🇷🇺", 
-                    "GALILEO" => "🇪🇺",
-                    "BEIDOU" => "🇨🇳",
-                    "QZSS" => "🇯🇵",
-                    "SBAS" => "📡",
-                    _ => "❓",
-                };
-                
-                ui.strong(format!("{} {} ({})", constellation_symbol, constellation, satellites.len()));
-                
-                // Sort satellites by PRN
-                let mut sorted_sats = satellites.clone();
-                sorted_sats.sort_by_key(|sat| sat.prn);
-                
-                // Show satellites in a compact grid
-                ui.group(|ui| {
-                    let mut current_row_count = 0;
-                    const SATS_PER_ROW: usize = 2;
-                    
-                    ui.horizontal_wrapped(|ui| {
-                        for sat in sorted_sats {
-                            if current_row_count >= SATS_PER_ROW {
-                                ui.end_row();
-                                current_row_count = 0;
-                            }
-                            
-                            // Satellite card
-                            ui.group(|ui| {
-                                ui.set_min_width(140.0);
-                                
-                                // PRN and usage status
-                                ui.horizontal(|ui| {
-                                    ui.strong(format!("PRN {}", sat.prn));
-                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        if sat.used {
-                                            ui.colored_label(egui::Color32::GREEN, "●");
-                                        } else {
-                                            ui.colored_label(egui::Color32::GRAY, "○");
-                                        }
-                                    });
-                                });
-                                
-                                // Signal strength with color coding
-                                if let Some(snr) = sat.snr {
-                                    let (color, strength_text) = match snr {
-                                        s if s >= 40.0 => (egui::Color32::GREEN, "Excellent"),
-                                        s if s >= 35.0 => (egui::Color32::from_rgb(144, 238, 144), "Good"),
-                                        s if s >= 25.0 => (egui::Color32::YELLOW, "Fair"),
-                                        s if s >= 15.0 => (egui::Color32::from_rgb(255, 165, 0), "Poor"),
-                                        _ => (egui::Color32::RED, "Very Poor"),
-                                    };
-                                    
-                                    ui.horizontal(|ui| {
-                                        ui.colored_label(color, format!("{:.0} dB", snr));
-                                        ui.small(strength_text);
-                                    });
-                                } else {
-                                    ui.colored_label(egui::Color32::GRAY, "No signal");
-                                }
-                                
-                                // Position info (compact)
-                                if let (Some(el), Some(az)) = (sat.elevation, sat.azimuth) {
-                                    ui.small(format!("El: {:.0}° Az: {:.0}°", el, az));
-                                } else {
-                                    ui.small("Position: Unknown");
-                                }
-                            });
-                            
-                            current_row_count += 1;
-                        }
-                    });
-                });
-                
-                ui.add_space(5.0);
+            // Sort by constellation first, then by PRN within each constellation
+            visible_satellites.sort_by(|a, b| {
+                a.constellation.cmp(&b.constellation)
+                    .then(a.prn.cmp(&b.prn))
+            });
+
+            if visible_satellites.is_empty() {
+                ui.weak("No visible satellites");
+                return;
             }
+
+            // Create table with headers
+            egui::Grid::new("satellite_table")
+                .num_columns(7)
+                .spacing([8.0, 4.0])
+                .striped(true)
+                .show(ui, |ui| {
+                    // Table headers
+                    ui.strong("Constellation");
+                    ui.strong("PRN");
+                    ui.strong("Used");
+                    ui.strong("SNR (dB)");
+                    ui.strong("Quality");
+                    ui.strong("Elevation");
+                    ui.strong("Azimuth");
+                    ui.end_row();
+
+                    // Table rows
+                    for sat in visible_satellites {
+                        // Constellation with symbol
+                        let constellation_symbol = match sat.constellation.as_str() {
+                            "GPS" => "🇺🇸",
+                            "GLONASS" => "🇷🇺", 
+                            "GALILEO" => "🇪🇺",
+                            "BEIDOU" => "🇨🇳",
+                            "QZSS" => "🇯🇵",
+                            "SBAS" => "📡",
+                            _ => "❓",
+                        };
+                        ui.label(format!("{} {}", constellation_symbol, sat.constellation));
+
+                        // PRN
+                        ui.monospace(format!("{}", sat.prn));
+
+                        // Used indicator
+                        if sat.used {
+                            ui.colored_label(egui::Color32::GREEN, "✓ Yes");
+                        } else {
+                            ui.colored_label(egui::Color32::GRAY, "○ No");
+                        }
+
+                        // SNR with color coding
+                        if let Some(snr) = sat.snr {
+                            let color = match snr {
+                                s if s >= 40.0 => egui::Color32::GREEN,
+                                s if s >= 35.0 => egui::Color32::from_rgb(144, 238, 144), // Light green
+                                s if s >= 25.0 => egui::Color32::YELLOW,
+                                s if s >= 15.0 => egui::Color32::from_rgb(255, 165, 0), // Orange
+                                _ => egui::Color32::RED,
+                            };
+                            ui.colored_label(color, format!("{:.1}", snr));
+                        } else {
+                            ui.colored_label(egui::Color32::GRAY, "--");
+                        }
+
+                        // Signal quality description
+                        let quality_text = sat.signal_strength_description();
+                        let quality_color = match quality_text.as_str() {
+                            "Excellent" => egui::Color32::GREEN,
+                            "Good" => egui::Color32::from_rgb(144, 238, 144),
+                            "Fair" => egui::Color32::YELLOW,
+                            "Poor" => egui::Color32::from_rgb(255, 165, 0),
+                            "Very Poor" => egui::Color32::RED,
+                            _ => egui::Color32::GRAY,
+                        };
+                        ui.colored_label(quality_color, quality_text);
+
+                        // Elevation
+                        if let Some(el) = sat.elevation {
+                            ui.monospace(format!("{:>3.0}°", el));
+                        } else {
+                            ui.colored_label(egui::Color32::GRAY, " --");
+                        }
+
+                        // Azimuth
+                        if let Some(az) = sat.azimuth {
+                            ui.monospace(format!("{:>3.0}°", az));
+                        } else {
+                            ui.colored_label(egui::Color32::GRAY, " --");
+                        }
+
+                        ui.end_row();
+                    }
+                });
         });
 
         ui.separator();
-        ui.small("💡 ● = Used in fix, ○ = Visible only");
+        ui.small("💡 Table shows satellites above horizon, sorted by constellation");
     }
 
     fn render_sky_plot(&self, ui: &mut egui::Ui, data: &GpsData) {
