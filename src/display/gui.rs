@@ -1,4 +1,4 @@
-// src/display/gui.rs v14
+// src/display/gui.rs v16
 //! GUI display implementation using egui
 
 #[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
@@ -188,8 +188,11 @@ impl GpsGuiApp {
         ui.label(format!("📊 {} used / {} visible", used_count, total_count));
         ui.add_space(5.0);
 
-        // Satellite table in a scrollable area
-        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+        // Satellite table in a scrollable area that adapts to available height
+        let available_height = ui.available_size().y - 80.0; // Reserve space for header and summary
+        let scroll_height = available_height.max(100.0); // Minimum height for usability
+        
+        egui::ScrollArea::vertical().max_height(scroll_height).show(ui, |ui| {
             // Filter out satellites below horizon and sort by constellation then PRN
             let mut visible_satellites: Vec<_> = data.satellites_info.iter()
                 .filter(|sat| {
@@ -307,20 +310,20 @@ impl GpsGuiApp {
             return;
         }
 
-        // Calculate the plot area
+        // Calculate the plot area - make it responsive to available space within this UI
         let available_size = ui.available_size();
-        let plot_size = available_size.x.min(available_size.y - 30.0).min(220.0);
-        let _center = egui::pos2(plot_size / 2.0, plot_size / 2.0);
+        let max_plot_size = available_size.x.min(available_size.y - 60.0); // Leave space for title and legend
+        let plot_size = max_plot_size.max(150.0).min(350.0); // Minimum 150px, maximum 350px
         let radius = plot_size / 2.0 - 20.0; // Leave margin for labels
 
-        // Reserve space for the plot
+        // Reserve space for the plot within this UI context
         let (rect, _response) = ui.allocate_exact_size(
             [plot_size, plot_size].into(),
             egui::Sense::hover()
         );
 
         if ui.is_rect_visible(rect) {
-            let painter = ui.painter_at(rect);
+            let painter = ui.painter();
             
             // Draw background circle (horizon)
             painter.circle_stroke(
@@ -402,22 +405,26 @@ impl GpsGuiApp {
                             "QZSS" => egui::Color32::from_rgb(255, 150, 0),     // Orange
                             _ => egui::Color32::WHITE,
                         };
-                        (color, 8.0)
+                        // Scale satellite size with plot size
+                        let size = (plot_size / 30.0).max(4.0).min(10.0);
+                        (color, size)
                     } else {
                         // Unused satellites are smaller and gray
-                        (egui::Color32::GRAY, 5.0)
+                        let size = (plot_size / 50.0).max(3.0).min(6.0);
+                        (egui::Color32::GRAY, size)
                     };
 
                     // Draw satellite dot
                     painter.circle_filled(sat_pos, sat_size, sat_color);
 
-                    // Draw PRN number next to satellite
+                    // Draw PRN number next to satellite (scale font with plot size)
                     let text_pos = sat_pos + egui::vec2(sat_size + 2.0, 0.0);
+                    let font_size = (plot_size / 25.0).max(8.0).min(12.0);
                     painter.text(
                         text_pos,
                         egui::Align2::LEFT_CENTER,
                         sat.prn.to_string(),
-                        egui::FontId::monospace(9.0),
+                        egui::FontId::monospace(font_size),
                         egui::Color32::WHITE
                     );
 
@@ -440,19 +447,20 @@ impl GpsGuiApp {
                 }
             }
 
-            // Add elevation labels
+            // Add elevation labels (scale with plot size)
+            let label_font_size = (plot_size / 30.0).max(7.0).min(10.0);
             painter.text(
                 rect.center() + egui::vec2(radius / 3.0 + 5.0, 0.0),
                 egui::Align2::LEFT_CENTER,
                 "60°",
-                egui::FontId::monospace(8.0),
+                egui::FontId::monospace(label_font_size),
                 egui::Color32::DARK_GRAY
             );
             painter.text(
                 rect.center() + egui::vec2(radius * 2.0 / 3.0 + 5.0, 0.0),
                 egui::Align2::LEFT_CENTER,
                 "30°",
-                egui::FontId::monospace(8.0),
+                egui::FontId::monospace(label_font_size),
                 egui::Color32::DARK_GRAY
             );
         }
@@ -532,39 +540,54 @@ impl eframe::App for GpsGuiApp {
             });
         });
 
-        // Main content area with 3 sections
+        // Main content area with flexible layout
         egui::CentralPanel::default().show(ctx, |ui| {
+            // Use available space efficiently
+            let available_size = ui.available_size();
+            
             ui.horizontal(|ui| {
-                // Left column - Main GPS data (40% width)
+                // Left panel - Main GPS data (40% of width, full height)
+                let left_width = available_size.x * 0.4;
                 ui.allocate_ui_with_layout(
-                    [ui.available_width() * 0.4, ui.available_height()].into(),
+                    [left_width, available_size.y].into(),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
                         ui.group(|ui| {
-                            ui.set_min_height(400.0);
-                            self.render_main_data_panel(ui, &data);
+                            ui.set_width(left_width - 10.0); // Account for margins
+                            ui.set_height(available_size.y - 10.0);
+                            
+                            egui::ScrollArea::vertical().show(ui, |ui| {
+                                self.render_main_data_panel(ui, &data);
+                            });
                         });
                     }
                 );
 
                 ui.separator();
 
-                // Right side - Split into sky plot (top) and satellite list (bottom)
+                // Right panel - Sky plot and satellites (60% of width)
+                let right_width = available_size.x * 0.6 - 20.0; // Account for separator
                 ui.allocate_ui_with_layout(
-                    [ui.available_width(), ui.available_height()].into(),
+                    [right_width, available_size.y].into(),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
-                        // Sky plot (top half)
+                        // Calculate responsive heights
+                        let sky_plot_height = (available_size.y * 0.5).max(200.0).min(400.0);
+                        let satellite_table_height = available_size.y - sky_plot_height - 20.0; // Leave space for separator
+                        
+                        // Sky plot (top section)
                         ui.group(|ui| {
-                            ui.set_height(250.0);
+                            ui.set_width(right_width - 10.0);
+                            ui.set_height(sky_plot_height);
                             self.render_sky_plot(ui, &data);
                         });
 
                         ui.add_space(5.0);
 
-                        // Satellite list (bottom half)
+                        // Satellite table (bottom section)
                         ui.group(|ui| {
-                            ui.set_min_height(200.0);
+                            ui.set_width(right_width - 10.0);
+                            ui.set_height(satellite_table_height.max(150.0)); // Minimum height
                             self.render_satellite_panel(ui, &data);
                         });
                     }
