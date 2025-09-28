@@ -1,0 +1,109 @@
+[package]
+name = "gps-monitor"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "Cross-platform GPS monitoring tool similar to gpsmon"
+license = "MIT"
+repository = "https://github.com/yourusername/gps-monitor"
+homepage = "https://github.com/yourusername/gps-monitor"
+documentation = "https://docs.rs/gps-monitor"
+readme = "README.md"
+keywords = ["gps", "nmea", "gpsd", "location", "monitoring"]
+categories = ["command-line-utilities", "hardware-support"]
+
+# Binary configuration
+[[bin]]
+name = "gps-monitor"
+path = "src/main.rs"
+
+# Library configuration
+[lib]
+name = "gps_monitor"
+path = "src/lib.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# Serial communication
+tokio-serial = "5.4"
+
+# JSON handling
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Command line interface
+clap = { version = "4.0", features = ["derive"] }
+
+# Date and time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Terminal interface
+crossterm = "0.27"
+
+# Error handling
+anyhow = "1.0"
+
+# Windows-specific dependencies (only compiled on Windows)
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_Devices_Sensors",
+    "Storage_Streams",
+    "Devices_Geolocation",
+    "Foundation",
+    "Foundation_Collections",
+] }
+
+[dev-dependencies]
+# Testing framework (included by default, but can specify version)
+# tokio-test = "0.4"
+
+[profile.release]
+# Optimize for size and performance
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+# Faster compilation for development
+opt-level = 0
+debug = true
+split-debuginfo = "unpacked"
+
+# GUI dependencies (Linux with X11)
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+eframe = { version = "0.24", optional = true }
+egui = { version = "0.24", optional = true }
+
+# Optional features
+[features]
+default = []
+gui = ["eframe", "egui"]
+
+# Package metadata
+[package.metadata.docs.rs]
+# Build docs with all features on docs.rs
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[package.metadata.deb]
+# Debian package configuration (for cargo-deb)
+maintainer = "Your Name <your.email@example.com>"
+copyright = "2024, Your Name <your.email@example.com>"
+license-file = ["LICENSE", "4"]
+extended-description = """\
+A cross-platform GPS monitoring tool that provides real-time GPS data display
+similar to gpsmon on Linux. Supports direct serial connections, gpsd daemon,
+and Windows Location Services."""
+depends = "$auto"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/gps-monitor", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/gps-monitor/README", "644"],
+]
