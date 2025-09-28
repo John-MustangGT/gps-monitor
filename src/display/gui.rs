@@ -38,7 +38,7 @@ impl GuiDisplay {
         let running_clone = Arc::clone(&running);
 
         // Spawn GUI thread
-        let gui_handle = std::thread::spawn(move || {
+        let gui_handle = std::thread::spawn(move || -> Result<()> {
             let options = eframe::NativeOptions {
                 viewport: egui::ViewportBuilder::default()
                     .with_inner_size([800.0, 600.0])
@@ -47,7 +47,8 @@ impl GuiDisplay {
             };
 
             let app = GpsGuiApp::new(data_clone, running_clone, tx);
-            eframe::run_native("GPS Monitor", options, Box::new(|_cc| Ok(Box::new(app))))
+            eframe::run_native("GPS Monitor", options, Box::new(|_cc| Box::new(app)))
+                .map_err(GpsError::from)
         });
 
         // Wait for GUI to signal shutdown or handle Ctrl+C
@@ -64,7 +65,8 @@ impl GuiDisplay {
         }
 
         // Wait for GUI thread to complete
-        gui_handle.join().map_err(|_| GpsError::Other("GUI thread panicked".to_string()))?;
+        let result = gui_handle.join().map_err(|_| GpsError::Other("GUI thread panicked".to_string()))?;
+        result?;
         Ok(())
     }
 }
