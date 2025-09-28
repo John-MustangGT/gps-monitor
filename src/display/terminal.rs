@@ -62,6 +62,36 @@ impl TerminalDisplay {
         Ok(())
     }
 
+    fn render_satellite_section(&self, stdout: &mut impl Write, data: &GpsData) -> Result<()> {
+        execute!(
+            stdout,
+            SetForegroundColor(Color::Blue),
+            Print("SATELLITES:\n"),
+            ResetColor
+        ).map_err(|e| GpsError::Io(e))?;
+
+        let used_count = data.satellites_used();
+        let total_count = data.satellites_info.len();
+        
+        execute!(
+            stdout,
+            Print(format!("  Total: {} visible, {} used in fix\n", total_count, used_count))
+        ).map_err(|e| GpsError::Io(e))?;
+
+        // Group by constellation and show summary
+        let grouped = data.satellites_by_constellation();
+        for (constellation, satellites) in grouped {
+            let used_in_constellation = satellites.iter().filter(|s| s.used).count();
+            execute!(
+                stdout,
+                Print(format!("  {}: {}/{} used\n", constellation, used_in_constellation, satellites.len()))
+            ).map_err(|e| GpsError::Io(e))?;
+        }
+
+        execute!(stdout, Print("\n")).map_err(|e| GpsError::Io(e))?;
+        Ok(())
+    }
+
     /// Render the GPS data to the terminal
     fn render_display(&self, stdout: &mut impl Write, data: &GpsData) -> Result<()> {
         // Header
@@ -97,6 +127,11 @@ impl TerminalDisplay {
         // Quality section (for GPS sources)
         if data.satellites.is_some() || data.hdop.is_some() || data.fix_quality.is_some() {
             self.render_quality_section(stdout, data)?;
+        }
+
+        // Satellite section (if satellite data available)
+        if !data.satellites_info.is_empty() {
+            self.render_satellite_section(stdout, data)?;
         }
 
         // Raw data section

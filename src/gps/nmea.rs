@@ -1,7 +1,7 @@
 // src/gps/nmea.rs
 //! NMEA sentence parsing
 
-use super::data::GpsData;
+use super::data::{GpsData, SatelliteInfo};
 
 /// Parse a single NMEA sentence and update GPS data
 pub fn parse_nmea_sentence(data: &mut GpsData, line: &str) {
@@ -11,6 +11,8 @@ pub fn parse_nmea_sentence(data: &mut GpsData, line: &str) {
         parse_gpgga(data, &parts);
     } else if line.starts_with("$GPRMC") || line.starts_with("$GNRMC") {
         parse_gprmc(data, &parts);
+    } else if line.starts_with("$GPGSV") || line.starts_with("$GLGSV") || line.starts_with("$GAGSV") || line.starts_with("$GBGSV") {
+        parse_gsv(data, &parts, line);
     }
 }
 
@@ -96,6 +98,70 @@ fn parse_gprmc(data: &mut GpsData, parts: &[&str]) {
     }
 }
 
+/// Parse GSV (Satellites in View) sentence
+fn parse_gsv(data: &mut GpsData, parts: &[&str], line: &str) {
+    if parts.len() < 4 {
+        return;
+    }
+
+    // Determine constellation from sentence type
+    let constellation = if line.starts_with("$GPGSV") {
+        "GPS"
+    } else if line.starts_with("$GLGSV") {
+        "GLONASS"
+    } else if line.starts_with("$GAGSV") {
+        "GALILEO"
+    } else if line.starts_with("$GBGSV") {
+        "BEIDOU"
+    } else {
+        "UNKNOWN"
+    };
+
+    // Parse message number and total messages
+    let message_num = parts[2].parse::<u8>().unwrap_or(0);
+    let _total_messages = parts[1].parse::<u8>().unwrap_or(0);
+
+    // If this is the first message, clear existing satellites for this constellation
+    if message_num == 1 {
+        data.satellites_info.retain(|sat| sat.constellation != constellation);
+    }
+
+    // Parse satellite information (up to 4 satellites per message)
+    let mut sat_index = 4; // Start after header fields
+    while sat_index + 3 < parts.len() {
+        if let Ok(prn) = parts[sat_index].parse::<u8>() {
+            let mut sat_info = SatelliteInfo::new(prn);
+            sat_info.constellation = constellation.to_string();
+
+            // Elevation
+            if !parts[sat_index + 1].is_empty() {
+                sat_info.elevation = parts[sat_index + 1].parse::<f32>().ok();
+            }
+
+            // Azimuth
+            if !parts[sat_index + 2].is_empty() {
+                sat_info.azimuth = parts[sat_index + 2].parse::<f32>().ok();
+            }
+
+            // SNR (may be empty)
+            if sat_index + 3 < parts.len() && !parts[sat_index + 3].is_empty() {
+                // Remove checksum if present
+                let snr_str = parts[sat_index + 3].split('*').next().unwrap_or(parts[sat_index + 3]);
+                sat_info.snr = snr_str.parse::<f32>().ok();
+            }
+
+            // Add or update satellite info
+            if let Some(existing) = data.satellites_info.iter_mut().find(|s| s.prn == prn) {
+                *existing = sat_info;
+            } else {
+                data.satellites_info.push(sat_info);
+            }
+        }
+
+        sat_index += 4;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,6 +193,21 @@ mod tests {
         // Speed should be converted from knots to km/h
         assert!((data.speed.unwrap() - 41.5).abs() < 0.1);
         assert_eq!(data.course, Some(84.4));
+    }
+
+    #[test]
+    fn test_gsv_parsing() {
+        let mut data = GpsData::new();
+        let gsv = "$GPGSV,3,1,12,01,40,083,46,02,17,308,41,12,07,344,39,14,22,228,45*75";
+        
+        parse_nmea_sentence(&mut data, gsv);
+        
+        assert_eq!(data.satellites_info.len(), 4);
+        assert_eq!(data.satellites_info[0].prn, 1);
+        assert_eq!(data.satellites_info[0].constellation, "GPS");
+        assert_eq!(data.satellites_info[0].elevation, Some(40.0));
+        assert_eq!(data.satellites_info[0].azimuth, Some(83.0));
+        assert_eq!(data.satellites_info[0].snr, Some(46.0));
     }
 
     #[test]

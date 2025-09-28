@@ -1,7 +1,7 @@
 // src/gps/gpsd.rs
 //! GPSD client implementation
 
-use super::data::GpsData;
+use super::data::{GpsData, SatelliteInfo};
 use crate::error::{Result, GpsError};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -81,7 +81,40 @@ fn parse_tpv_message(data: &mut GpsData, msg_data: &HashMap<String, serde_json::
 /// Parse SKY (satellite data) message
 fn parse_sky_message(data: &mut GpsData, msg_data: &HashMap<String, serde_json::Value>) {
     if let Some(satellites) = msg_data.get("satellites").and_then(|v| v.as_array()) {
-        data.satellites = Some(satellites.len() as u8);
+        data.satellites_info.clear(); // Clear existing satellite data
+        
+        for sat_value in satellites {
+            if let Some(sat_obj) = sat_value.as_object() {
+                if let Some(prn) = sat_obj.get("PRN").and_then(|v| v.as_u64()) {
+                    let mut sat_info = SatelliteInfo::new(prn as u8);
+                    
+                    // Elevation
+                    if let Some(el) = sat_obj.get("el").and_then(|v| v.as_f64()) {
+                        sat_info.elevation = Some(el as f32);
+                    }
+                    
+                    // Azimuth
+                    if let Some(az) = sat_obj.get("az").and_then(|v| v.as_f64()) {
+                        sat_info.azimuth = Some(az as f32);
+                    }
+                    
+                    // Signal strength
+                    if let Some(ss) = sat_obj.get("ss").and_then(|v| v.as_f64()) {
+                        sat_info.snr = Some(ss as f32);
+                    }
+                    
+                    // Used in fix
+                    if let Some(used) = sat_obj.get("used").and_then(|v| v.as_bool()) {
+                        sat_info.used = used;
+                    }
+                    
+                    data.satellites_info.push(sat_info);
+                }
+            }
+        }
+        
+        // Update satellite count
+        data.satellites = Some(data.satellites_info.len() as u8);
     }
     
     if let Some(hdop) = msg_data.get("hdop").and_then(|v| v.as_f64()) {

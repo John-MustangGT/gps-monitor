@@ -16,9 +16,6 @@ use std::{
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio_serial::SerialPortBuilderExt;
 
-#[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
-use crate::display::gui::GuiDisplay;
-
 #[cfg(windows)]
 use crate::gps::windows;
 
@@ -107,7 +104,7 @@ impl GpsMonitor {
                         if !line.is_empty() {
                             let mut data_guard = data.write().unwrap();
                             data_guard.update_timestamp();
-                            data_guard.raw_data = line.to_string();
+                            data_guard.add_raw_sentence(line);
                             data_guard.set_source("Serial GPS");
                             nmea::parse_nmea_sentence(&mut data_guard, line);
                         }
@@ -145,7 +142,7 @@ impl GpsMonitor {
                         if !line.is_empty() {
                             let mut data_guard = data.write().unwrap();
                             data_guard.update_timestamp();
-                            data_guard.raw_data = line.to_string();
+                            data_guard.add_raw_sentence(line);
                             data_guard.set_source("gpsd");
                             
                             if let Err(e) = gpsd::parse_gpsd_json(&mut data_guard, line) {
