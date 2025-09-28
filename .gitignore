@@ -1,0 +1,14 @@
+# Rust build artifacts and generated files
+/target/
+**/*.rs.bk
+**/*.pdb
+    
+# Cargo.lock (optional, keep for libraries, ignore for executables)
+Cargo.lock
+    
+# OS-specific temporary files
+.DS_Store
+Thumbs.db
+    
+# IDE-specific files (e.g., VS Code)
+.vscode/
