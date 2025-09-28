@@ -64,12 +64,12 @@ impl GpsMonitor {
     }
 
     /// Start the display (terminal or GUI based on environment)
-    pub async fn run_display(&self, force_terminal: bool, force_gui: bool) -> Result<()> {
+    pub async fn run_display(&self, _force_terminal: bool, force_gui: bool) -> Result<()> {
         #[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
         {
             use crate::display::{gui::GuiDisplay, should_use_gui};
             
-            if force_gui || (should_use_gui() && !force_terminal) {
+            if force_gui || (should_use_gui() && !_force_terminal) {
                 let gui_display = GuiDisplay::new();
                 gui_display.run(Arc::clone(&self.data), Arc::clone(&self.running)).await?;
             } else {

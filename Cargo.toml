@@ -1,20 +1,4 @@
-[dev-dependencies]
-# Testing framework (included by default, but can specify version)
-# tokio-test = "0.4"
-
-[profile.release]
-# Optimize for size and performance
-opt-level = 3
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
-
-[profile.dev]
-# Faster compilation for development
-opt-level = 0
-debug = true
-split-debuginfo = "unpacked"[package]
+[package]
 name = "gps-monitor"
 version = "0.1.0"
 edition = "2021"
@@ -61,11 +45,6 @@ crossterm = "0.27"
 # Error handling
 anyhow = "1.0"
 
-# GUI dependencies (Linux with X11)
-[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
-eframe = { version = "0.28", optional = true }
-egui = { version = "0.28", optional = true }
-
 # Windows-specific dependencies (only compiled on Windows)
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.52", features = [
@@ -77,6 +56,11 @@ windows = { version = "0.52", features = [
     "Foundation",
     "Foundation_Collections",
 ] }
+
+# GUI dependencies (Linux with X11)
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+eframe = { version = "0.28", optional = true }
+egui = { version = "0.28", optional = true }
 
 [dev-dependencies]
 # Testing framework (included by default, but can specify version)
@@ -95,11 +79,6 @@ strip = true
 opt-level = 0
 debug = true
 split-debuginfo = "unpacked"
-
-# GUI dependencies (Linux with X11)
-[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
-eframe = { version = "0.24", optional = true }
-egui = { version = "0.24", optional = true }
 
 # Optional features
 [features]
