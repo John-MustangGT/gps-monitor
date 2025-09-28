@@ -1,4 +1,4 @@
-// src/display/gui.rs
+// src/display/gui.rs v13
 //! GUI display implementation using egui
 
 #[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
@@ -277,6 +277,176 @@ impl GpsGuiApp {
         ui.separator();
         ui.small("💡 ● = Used in fix, ○ = Visible only");
     }
+
+    fn render_sky_plot(&self, ui: &mut egui::Ui, data: &GpsData) {
+        ui.strong("🌌 Sky Plot");
+        ui.separator();
+
+        if data.satellites_info.is_empty() {
+            ui.weak("No satellite position data");
+            return;
+        }
+
+        // Calculate the plot area
+        let available_size = ui.available_size();
+        let plot_size = available_size.x.min(available_size.y - 30.0).min(220.0);
+        let _center = egui::pos2(plot_size / 2.0, plot_size / 2.0);
+        let radius = plot_size / 2.0 - 20.0; // Leave margin for labels
+
+        // Reserve space for the plot
+        let (rect, _response) = ui.allocate_exact_size(
+            [plot_size, plot_size].into(),
+            egui::Sense::hover()
+        );
+
+        if ui.is_rect_visible(rect) {
+            let painter = ui.painter_at(rect);
+            
+            // Draw background circle (horizon)
+            painter.circle_stroke(
+                rect.center(),
+                radius,
+                egui::Stroke::new(2.0, egui::Color32::GRAY)
+            );
+
+            // Draw elevation circles (30°, 60°)
+            painter.circle_stroke(
+                rect.center(),
+                radius * 2.0 / 3.0, // 60° elevation
+                egui::Stroke::new(1.0, egui::Color32::DARK_GRAY)
+            );
+            painter.circle_stroke(
+                rect.center(),
+                radius / 3.0, // 30° elevation
+                egui::Stroke::new(1.0, egui::Color32::DARK_GRAY)
+            );
+
+            // Draw cardinal direction lines and labels
+            let directions: [(f32, &str); 4] = [
+                (0.0, "N"),   // North (top)
+                (90.0, "E"),  // East (right)
+                (180.0, "S"), // South (bottom)
+                (270.0, "W"), // West (left)
+            ];
+
+            for (angle_deg, label) in directions {
+                let angle_rad = angle_deg.to_radians();
+                let end_pos = rect.center() + egui::vec2(
+                    angle_rad.sin() * radius,
+                    -angle_rad.cos() * radius // Negative because screen Y increases downward
+                );
+                
+                // Draw direction line
+                painter.line_segment(
+                    [rect.center(), end_pos],
+                    egui::Stroke::new(1.0, egui::Color32::DARK_GRAY)
+                );
+
+                // Draw direction label
+                let label_pos = rect.center() + egui::vec2(
+                    angle_rad.sin() * (radius + 10.0),
+                    -angle_rad.cos() * (radius + 10.0)
+                );
+                painter.text(
+                    label_pos,
+                    egui::Align2::CENTER_CENTER,
+                    label,
+                    egui::FontId::default(),
+                    egui::Color32::WHITE
+                );
+            }
+
+            // Plot satellites
+            for sat in &data.satellites_info {
+                if let (Some(elevation), Some(azimuth)) = (sat.elevation, sat.azimuth) {
+                    // Convert to screen coordinates
+                    // Elevation: 90° = center, 0° = edge
+                    let elev_normalized = (90.0 - elevation) / 90.0; // 0 = center, 1 = edge
+                    let sat_radius = radius * elev_normalized;
+                    
+                    // Azimuth: 0° = North (top), increases clockwise
+                    let azimuth_rad = azimuth.to_radians();
+                    let sat_pos = rect.center() + egui::vec2(
+                        azimuth_rad.sin() * sat_radius,
+                        -azimuth_rad.cos() * sat_radius
+                    );
+
+                    // Determine satellite color based on constellation and signal
+                    let (sat_color, sat_size) = if sat.used {
+                        // Used satellites are larger and more colorful
+                        let color = match sat.constellation.as_str() {
+                            "GPS" => egui::Color32::from_rgb(0, 150, 255),      // Blue
+                            "GLONASS" => egui::Color32::from_rgb(255, 100, 100), // Red
+                            "GALILEO" => egui::Color32::from_rgb(100, 255, 100), // Green
+                            "BEIDOU" => egui::Color32::from_rgb(255, 255, 100),  // Yellow
+                            "QZSS" => egui::Color32::from_rgb(255, 150, 0),     // Orange
+                            _ => egui::Color32::WHITE,
+                        };
+                        (color, 8.0)
+                    } else {
+                        // Unused satellites are smaller and gray
+                        (egui::Color32::GRAY, 5.0)
+                    };
+
+                    // Draw satellite dot
+                    painter.circle_filled(sat_pos, sat_size, sat_color);
+
+                    // Draw PRN number next to satellite
+                    let text_pos = sat_pos + egui::vec2(sat_size + 2.0, 0.0);
+                    painter.text(
+                        text_pos,
+                        egui::Align2::LEFT_CENTER,
+                        sat.prn.to_string(),
+                        egui::FontId::monospace(9.0),
+                        egui::Color32::WHITE
+                    );
+
+                    // Show signal strength as ring for used satellites
+                    if sat.used {
+                        if let Some(snr) = sat.snr {
+                            let ring_color = match snr {
+                                s if s >= 40.0 => egui::Color32::GREEN,
+                                s if s >= 35.0 => egui::Color32::YELLOW,
+                                s if s >= 25.0 => egui::Color32::from_rgb(255, 165, 0), // Orange
+                                _ => egui::Color32::RED,
+                            };
+                            painter.circle_stroke(
+                                sat_pos,
+                                sat_size + 2.0,
+                                egui::Stroke::new(1.5, ring_color)
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Add elevation labels
+            painter.text(
+                rect.center() + egui::vec2(radius / 3.0 + 5.0, 0.0),
+                egui::Align2::LEFT_CENTER,
+                "60°",
+                egui::FontId::monospace(8.0),
+                egui::Color32::DARK_GRAY
+            );
+            painter.text(
+                rect.center() + egui::vec2(radius * 2.0 / 3.0 + 5.0, 0.0),
+                egui::Align2::LEFT_CENTER,
+                "30°",
+                egui::FontId::monospace(8.0),
+                egui::Color32::DARK_GRAY
+            );
+        }
+
+        // Legend
+        ui.add_space(5.0);
+        ui.horizontal(|ui| {
+            ui.small("Legend:");
+            ui.colored_label(egui::Color32::from_rgb(0, 150, 255), "● GPS");
+            ui.colored_label(egui::Color32::from_rgb(255, 100, 100), "● GLO");
+            ui.colored_label(egui::Color32::from_rgb(100, 255, 100), "● GAL");
+            ui.colored_label(egui::Color32::from_rgb(255, 255, 100), "● BDS");
+        });
+    }
 }
 
 #[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
@@ -342,20 +512,43 @@ impl eframe::App for GpsGuiApp {
             });
         });
 
-        // Main content area with 2 columns
+        // Main content area with 3 sections
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.columns(2, |columns| {
-                // Left column - Main GPS data
-                columns[0].group(|ui| {
-                    ui.set_min_height(400.0);
-                    self.render_main_data_panel(ui, &data);
-                });
+            ui.horizontal(|ui| {
+                // Left column - Main GPS data (40% width)
+                ui.allocate_ui_with_layout(
+                    [ui.available_width() * 0.4, ui.available_height()].into(),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        ui.group(|ui| {
+                            ui.set_min_height(400.0);
+                            self.render_main_data_panel(ui, &data);
+                        });
+                    }
+                );
 
-                // Right column - Satellites
-                columns[1].group(|ui| {
-                    ui.set_min_height(400.0);
-                    self.render_satellite_panel(ui, &data);
-                });
+                ui.separator();
+
+                // Right side - Split into sky plot (top) and satellite list (bottom)
+                ui.allocate_ui_with_layout(
+                    [ui.available_width(), ui.available_height()].into(),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        // Sky plot (top half)
+                        ui.group(|ui| {
+                            ui.set_height(250.0);
+                            self.render_sky_plot(ui, &data);
+                        });
+
+                        ui.add_space(5.0);
+
+                        // Satellite list (bottom half)
+                        ui.group(|ui| {
+                            ui.set_min_height(200.0);
+                            self.render_satellite_panel(ui, &data);
+                        });
+                    }
+                );
             });
         });
     }
