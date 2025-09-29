@@ -1,4 +1,4 @@
-// src/display/gui.rs v16
+// src/display/gui.rs v17
 //! GUI display implementation using egui
 
 #[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
@@ -68,6 +68,20 @@ pub struct GpsGuiApp {
     running: Arc<AtomicBool>,
     shutdown_tx: mpsc::Sender<()>,
     _last_update: Option<DateTime<Utc>>,
+    sat_sort_column: SatelliteSortColumn,
+    sat_sort_ascending: bool,
+}
+
+#[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SatelliteSortColumn {
+    Constellation,
+    Prn,
+    Used,
+    Snr,
+    Quality,
+    Elevation,
+    Azimuth,
 }
 
 #[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
@@ -82,6 +96,8 @@ impl GpsGuiApp {
             running,
             shutdown_tx,
             _last_update: None,
+            sat_sort_column: SatelliteSortColumn::Constellation,
+            sat_sort_ascending: true,
         }
     }
 
@@ -173,7 +189,7 @@ impl GpsGuiApp {
         }
     }
 
-    fn render_satellite_panel(&self, ui: &mut egui::Ui, data: &GpsData) {
+    fn render_satellite_panel(&mut self, ui: &mut egui::Ui, data: &GpsData) {
         ui.strong("🛰 Satellites");
         ui.separator();
 
@@ -189,11 +205,15 @@ impl GpsGuiApp {
         ui.add_space(5.0);
 
         // Satellite table in a scrollable area that adapts to available height
-        let available_height = ui.available_size().y - 80.0; // Reserve space for header and summary
-        let scroll_height = available_height.max(100.0); // Minimum height for usability
+        let available_height = ui.available_size().y;
+        let reserved_space = 60.0; // Reserve more space for separator and footer text
+        let scroll_height = (available_height - reserved_space).max(100.0).min(available_height * 0.80); // Limit to 80% of available height
         
-        egui::ScrollArea::vertical().max_height(scroll_height).show(ui, |ui| {
-            // Filter out satellites below horizon and sort by constellation then PRN
+        egui::ScrollArea::vertical()
+            .max_height(scroll_height)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+            // Filter out satellites below horizon
             let mut visible_satellites: Vec<_> = data.satellites_info.iter()
                 .filter(|sat| {
                     // Keep satellites that have elevation data and are above horizon (>= 0°)
@@ -201,31 +221,154 @@ impl GpsGuiApp {
                 })
                 .collect();
             
-            // Sort by constellation first, then by PRN within each constellation
-            visible_satellites.sort_by(|a, b| {
-                a.constellation.cmp(&b.constellation)
-                    .then(a.prn.cmp(&b.prn))
-            });
+            // Sort by the selected column
+            match self.sat_sort_column {
+                SatelliteSortColumn::Constellation => {
+                    visible_satellites.sort_by(|a, b| {
+                        let cmp = a.constellation.cmp(&b.constellation).then(a.prn.cmp(&b.prn));
+                        if self.sat_sort_ascending { cmp } else { cmp.reverse() }
+                    });
+                }
+                SatelliteSortColumn::Prn => {
+                    visible_satellites.sort_by(|a, b| {
+                        let cmp = a.prn.cmp(&b.prn);
+                        if self.sat_sort_ascending { cmp } else { cmp.reverse() }
+                    });
+                }
+                SatelliteSortColumn::Used => {
+                    visible_satellites.sort_by(|a, b| {
+                        let cmp = b.used.cmp(&a.used); // Used first by default
+                        if self.sat_sort_ascending { cmp } else { cmp.reverse() }
+                    });
+                }
+                SatelliteSortColumn::Snr => {
+                    visible_satellites.sort_by(|a, b| {
+                        let cmp = b.snr.partial_cmp(&a.snr).unwrap_or(std::cmp::Ordering::Equal);
+                        if self.sat_sort_ascending { cmp } else { cmp.reverse() }
+                    });
+                }
+                SatelliteSortColumn::Quality => {
+                    // Define quality ranking (lower number = better quality)
+                    let quality_rank = |quality: &str| -> u8 {
+                        match quality {
+                            "Excellent" => 0,
+                            "Good" => 1,
+                            "Fair" => 2,
+                            "Poor" => 3,
+                            "Very Poor" => 4,
+                            _ => 5, // Unknown
+                        }
+                    };
+                    
+                    visible_satellites.sort_by(|a, b| {
+                        let a_quality = a.signal_strength_description();
+                        let b_quality = b.signal_strength_description();
+                        let a_rank = quality_rank(&a_quality);
+                        let b_rank = quality_rank(&b_quality);
+                        let cmp = a_rank.cmp(&b_rank);
+                        // Reverse the logic: ascending means best first (lower rank numbers)
+                        if self.sat_sort_ascending { cmp } else { cmp.reverse() }
+                    });
+                }
+                SatelliteSortColumn::Elevation => {
+                    visible_satellites.sort_by(|a, b| {
+                        let cmp = b.elevation.partial_cmp(&a.elevation).unwrap_or(std::cmp::Ordering::Equal);
+                        if self.sat_sort_ascending { cmp } else { cmp.reverse() }
+                    });
+                }
+                SatelliteSortColumn::Azimuth => {
+                    visible_satellites.sort_by(|a, b| {
+                        let cmp = a.azimuth.partial_cmp(&b.azimuth).unwrap_or(std::cmp::Ordering::Equal);
+                        if self.sat_sort_ascending { cmp } else { cmp.reverse() }
+                    });
+                }
+            }
 
             if visible_satellites.is_empty() {
                 ui.weak("No visible satellites");
                 return;
             }
 
-            // Create table with headers
+            // Create table with clickable headers
             egui::Grid::new("satellite_table")
                 .num_columns(7)
                 .spacing([8.0, 4.0])
                 .striped(true)
                 .show(ui, |ui| {
-                    // Table headers
-                    ui.strong("Constellation");
-                    ui.strong("PRN");
-                    ui.strong("Used");
-                    ui.strong("SNR (dB)");
-                    ui.strong("Quality");
-                    ui.strong("Elevation");
-                    ui.strong("Azimuth");
+                    // Table headers - clickable for sorting
+                    let make_header = |ui: &mut egui::Ui, text: &str, column: SatelliteSortColumn, current_column: SatelliteSortColumn, ascending: bool| {
+                        let is_sorted = column == current_column;
+                        let arrow = if is_sorted {
+                            if ascending { " ▲" } else { " ▼" }
+                        } else {
+                            ""
+                        };
+                        ui.strong(format!("{}{}", text, arrow)).clicked()
+                    };
+
+                    if make_header(ui, "Constellation", SatelliteSortColumn::Constellation, self.sat_sort_column, self.sat_sort_ascending) {
+                        if self.sat_sort_column == SatelliteSortColumn::Constellation {
+                            self.sat_sort_ascending = !self.sat_sort_ascending;
+                        } else {
+                            self.sat_sort_column = SatelliteSortColumn::Constellation;
+                            self.sat_sort_ascending = true;
+                        }
+                    }
+                    
+                    if make_header(ui, "PRN", SatelliteSortColumn::Prn, self.sat_sort_column, self.sat_sort_ascending) {
+                        if self.sat_sort_column == SatelliteSortColumn::Prn {
+                            self.sat_sort_ascending = !self.sat_sort_ascending;
+                        } else {
+                            self.sat_sort_column = SatelliteSortColumn::Prn;
+                            self.sat_sort_ascending = true;
+                        }
+                    }
+                    
+                    if make_header(ui, "Used", SatelliteSortColumn::Used, self.sat_sort_column, self.sat_sort_ascending) {
+                        if self.sat_sort_column == SatelliteSortColumn::Used {
+                            self.sat_sort_ascending = !self.sat_sort_ascending;
+                        } else {
+                            self.sat_sort_column = SatelliteSortColumn::Used;
+                            self.sat_sort_ascending = false; // Start with "used" first
+                        }
+                    }
+                    
+                    if make_header(ui, "SNR (dB)", SatelliteSortColumn::Snr, self.sat_sort_column, self.sat_sort_ascending) {
+                        if self.sat_sort_column == SatelliteSortColumn::Snr {
+                            self.sat_sort_ascending = !self.sat_sort_ascending;
+                        } else {
+                            self.sat_sort_column = SatelliteSortColumn::Snr;
+                            self.sat_sort_ascending = false; // Start with highest SNR first
+                        }
+                    }
+                    
+                    if make_header(ui, "Quality", SatelliteSortColumn::Quality, self.sat_sort_column, self.sat_sort_ascending) {
+                        if self.sat_sort_column == SatelliteSortColumn::Quality {
+                            self.sat_sort_ascending = !self.sat_sort_ascending;
+                        } else {
+                            self.sat_sort_column = SatelliteSortColumn::Quality;
+                            self.sat_sort_ascending = false; // Start with best quality first (descending from Excellent)
+                        }
+                    }
+                    
+                    if make_header(ui, "Elevation", SatelliteSortColumn::Elevation, self.sat_sort_column, self.sat_sort_ascending) {
+                        if self.sat_sort_column == SatelliteSortColumn::Elevation {
+                            self.sat_sort_ascending = !self.sat_sort_ascending;
+                        } else {
+                            self.sat_sort_column = SatelliteSortColumn::Elevation;
+                            self.sat_sort_ascending = false; // Start with highest elevation first
+                        }
+                    }
+                    
+                    if make_header(ui, "Azimuth", SatelliteSortColumn::Azimuth, self.sat_sort_column, self.sat_sort_ascending) {
+                        if self.sat_sort_column == SatelliteSortColumn::Azimuth {
+                            self.sat_sort_ascending = !self.sat_sort_ascending;
+                        } else {
+                            self.sat_sort_column = SatelliteSortColumn::Azimuth;
+                            self.sat_sort_ascending = true;
+                        }
+                    }
+                    
                     ui.end_row();
 
                     // Table rows
@@ -298,7 +441,7 @@ impl GpsGuiApp {
         });
 
         ui.separator();
-        ui.small("💡 Table shows satellites above horizon, sorted by constellation");
+        ui.small("💡 Click column headers to sort • Showing satellites above horizon");
     }
 
     fn render_sky_plot(&self, ui: &mut egui::Ui, data: &GpsData) {
