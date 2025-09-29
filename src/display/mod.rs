@@ -1,10 +1,32 @@
-// src/display/mod.rs
+// src/display/mod.rs v2
 //! Display modules for different interfaces
 
 pub mod terminal;
 
 #[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
 pub mod gui;
+
+#[cfg(not(all(unix, not(target_os = "macos"), feature = "gui")))]
+pub mod gui {
+    use crate::{gps::GpsData, error::{Result, GpsError}};
+    use std::sync::{Arc, RwLock, atomic::AtomicBool};
+    
+    pub struct GuiDisplay;
+    
+    impl GuiDisplay {
+        pub fn new() -> Self {
+            Self
+        }
+        
+        pub async fn run(
+            &self,
+            _data: Arc<RwLock<GpsData>>,
+            _running: Arc<AtomicBool>,
+        ) -> Result<()> {
+            Err(GpsError::Other("GUI support not compiled in".to_string()))
+        }
+    }
+}
 
 use crate::gps::GpsData;
 use std::sync::{Arc, RwLock};
