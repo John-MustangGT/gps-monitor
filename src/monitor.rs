@@ -34,11 +34,7 @@ pub struct GpsMonitor {
     running: Arc<AtomicBool>,
 }
 
-
-    /// Start monitoring GPS data from the specified source
-    pub async fn start(&self, source: GpsSource) -> Result<()> {
-        match source {
-         impl GpsMonitor {
+impl GpsMonitor {
     /// Create a new GPS monitor
     pub fn new() -> Self {
         Self {
@@ -66,7 +62,10 @@ pub struct GpsMonitor {
         }
     }
 
-    GpsSource::Serial { port, baudrate } => {
+    /// Start monitoring GPS data from the specified source
+    pub async fn start(&self, source: GpsSource) -> Result<()> {
+        match source {
+            GpsSource::Serial { port, baudrate } => {
                 self.connect_serial(&port, baudrate).await?;
             }
             GpsSource::Gpsd { host, port } => {
