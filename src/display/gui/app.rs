@@ -1,4 +1,4 @@
-// src/display/gui/app.rs v8
+// src/display/gui/app.rs v9
 //! Main GUI application structure - Pure egui implementation
 
 use crate::{gps::GpsData, config::GpsConfig, monitor::{GpsMonitor, GpsSource}};
