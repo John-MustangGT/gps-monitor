@@ -1,4 +1,4 @@
-// src/display/gui/app.rs v3
+// src/display/gui/app.rs v7
 //! Main GUI application structure - Pure egui implementation
 
 use crate::{gps::GpsData, config::GpsConfig, monitor::{GpsMonitor, GpsSource}};
@@ -11,6 +11,7 @@ use std::{
     },
     time::Duration,
 };
+use tokio::runtime::Runtime;
 
 use super::{panels, satellites::SatellitePanel, skyplot, settings::SettingsWindow};
 
@@ -30,7 +31,6 @@ enum ConnectionState {
     Disconnected,
     Connecting,
     Connected,
-    Error,
 }
 
 pub struct GpsGuiApp {
@@ -44,12 +44,18 @@ pub struct GpsGuiApp {
     connection_state: ConnectionState,
     error_message: Option<String>,
     config: GpsConfig,
+    runtime: Arc<Runtime>,
 }
 
 impl GpsGuiApp {
     pub fn new_from_config(config: GpsConfig) -> Self {
         let data = Arc::new(RwLock::new(GpsData::new()));
         let running = Arc::new(AtomicBool::new(false));
+        
+        // Create Tokio runtime for async operations
+        let runtime = Arc::new(
+            Runtime::new().expect("Failed to create Tokio runtime")
+        );
         
         let mut app = Self {
             data,
@@ -62,6 +68,7 @@ impl GpsGuiApp {
             connection_state: ConnectionState::Disconnected,
             error_message: None,
             config,
+            runtime,
         };
         
         // Auto-connect on startup
@@ -82,12 +89,15 @@ impl GpsGuiApp {
         
         let source = self.create_gps_source();
         
-        // Start connection in background
+        // Start connection in background using our runtime
         let monitor_clone = monitor.clone();
-        tokio::spawn(async move {
-            if let Err(e) = monitor_clone.start(source).await {
-                eprintln!("Failed to start GPS connection: {}", e);
-            }
+        let runtime = Arc::clone(&self.runtime);
+        std::thread::spawn(move || {
+            runtime.block_on(async move {
+                if let Err(e) = monitor_clone.start(source).await {
+                    eprintln!("Failed to start GPS connection: {}", e);
+                }
+            });
         });
         
         self.monitor = Some(monitor);
@@ -160,7 +170,6 @@ impl GpsGuiApp {
                     }
                     ConnectionState::Connecting => (egui::Color32::YELLOW, "Connecting..."),
                     ConnectionState::Disconnected => (egui::Color32::RED, "Disconnected"),
-                    ConnectionState::Error => (egui::Color32::RED, "Error"),
                 };
                 
                 ui.colored_label(status_color, "●");
@@ -193,7 +202,7 @@ impl GpsGuiApp {
                                 self.stop_connection();
                             }
                         }
-                        ConnectionState::Disconnected | ConnectionState::Error => {
+                        ConnectionState::Disconnected => {
                             if ui.button("▶ Connect").clicked() {
                                 self.start_connection();
                             }
@@ -310,6 +319,29 @@ impl GpsGuiApp {
             self.error_message = Some("Settings saved! Click 'Restart' to apply changes.".to_string());
         }
     }
+
+    fn show_error_notification(&mut self, ctx: &egui::Context) {
+        // Take ownership of error_message to avoid borrow issues
+        if let Some(msg) = self.error_message.take() {
+            let mut keep_showing = true;
+            
+            egui::Window::new("ℹ Notification")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label(&msg);
+                    if ui.button("OK").clicked() {
+                        keep_showing = false;
+                    }
+                });
+            
+            // Put the message back if we should keep showing it
+            if keep_showing {
+                self.error_message = Some(msg);
+            }
+        }
+    }
 }
 
 impl eframe::App for GpsGuiApp {
@@ -322,20 +354,7 @@ impl eframe::App for GpsGuiApp {
         self.render_bottom_panel(ctx);
         self.render_main_content(ctx);
         self.handle_settings_window(ctx);
-
-        // Show error notification if any
-        if let Some(ref msg) = self.error_message {
-            egui::Window::new("ℹ Notification")
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .show(ctx, |ui| {
-                    ui.label(msg);
-                    if ui.button("OK").clicked() {
-                        self.error_message = None;
-                    }
-                });
-        }
+        self.show_error_notification(ctx);
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {

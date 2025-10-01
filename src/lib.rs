@@ -1,4 +1,4 @@
-// src/lib.rs v2
+// src/lib.rs v3
 //! GPS Monitor Library
 //! 
 //! A cross-platform GPS monitoring library that supports multiple GPS sources
@@ -16,5 +16,5 @@ pub use monitor::{GpsMonitor, GpsSource};
 pub use error::{Result, GpsError};
 pub use config::GpsConfig;
 
-#[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
-pub use display::gui::app::GpsGuiApp;
+#[cfg(feature = "gui")]
+pub use display::gui::GpsGuiApp;

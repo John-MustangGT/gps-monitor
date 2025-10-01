@@ -39,6 +39,9 @@ chrono = { version = "0.4", features = ["serde"] }
 # Error handling
 anyhow = "1.0"
 
+# Terminal UI
+crossterm = "0.27"
+
 # GUI (egui/eframe) - now required by default
 eframe = { version = "0.28", default-features = true }
 egui = { version = "0.28" }

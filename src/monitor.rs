@@ -1,4 +1,4 @@
-// src/monitor.rs
+// src/monitor.rs v2
 /// Main GPS monitor coordination
 
 use crate::{
@@ -79,19 +79,8 @@ impl GpsMonitor {
         Ok(())
     }
 
-    /// Start the display (terminal or GUI based on environment)
-    pub async fn run_display(&self, _force_terminal: bool, force_gui: bool) -> Result<()> {
-        #[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
-        {
-            use crate::display::{gui::GuiDisplay, should_use_gui};
-            
-            if force_gui || (should_use_gui() && !_force_terminal) {
-                let gui_display = GuiDisplay::new();
-                return gui_display.run(Arc::clone(&self.data), Arc::clone(&self.running)).await;
-            }
-        }
-
-        // Default to terminal display
+    /// Start the display (terminal only for now)
+    pub async fn run_display(&self) -> Result<()> {
         let terminal_display = TerminalDisplay::new();
         terminal_display.run(Arc::clone(&self.data), Arc::clone(&self.running)).await
     }

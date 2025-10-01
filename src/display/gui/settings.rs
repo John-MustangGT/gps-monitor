@@ -1,4 +1,4 @@
-// src/display/gui/settings.rs v1
+// src/display/gui/settings.rs v2
 //! Settings UI for GPS source configuration
 
 use crate::config::GpsConfig;
@@ -64,13 +64,20 @@ impl SettingsWindow {
     }
 
     pub fn show(&mut self, ctx: &egui::Context) -> bool {
-        let mut config_changed = false;
+        if !self.open {
+            return false;
+        }
 
-        egui::Window::new("⚙ Settings")
-            .open(&mut self.open)
+        let mut config_changed = false;
+        
+        // We need to avoid .open() because it creates a borrow conflict
+        // Instead, we'll manually handle the close button
+        let window = egui::Window::new("⚙ Settings")
+            .collapsible(false)
             .resizable(true)
-            .default_width(400.0)
-            .show(ctx, |ui| {
+            .default_width(400.0);
+            
+        let response = window.show(ctx, |ui| {
                 ui.heading("GPS Source Configuration");
                 ui.separator();
 
@@ -134,6 +141,14 @@ impl SettingsWindow {
                 ui.small("💡 Changes will take effect after restarting the GPS connection");
             });
 
+        // Check if user clicked outside to close (optional feature)
+        if let Some(inner_response) = response {
+            if inner_response.response.clicked_elsewhere() {
+                // Window was clicked outside - could close here if desired
+                // self.open = false;
+            }
+        }
+        
         config_changed
     }
 

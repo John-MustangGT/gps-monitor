@@ -1,7 +1,7 @@
-// src/display/gui/mod.rs v3
+// src/display/gui/mod.rs v4
 //! GUI display module - Pure egui implementation
 
-mod app;
+pub mod app;
 mod panels;
 mod satellites;
 mod skyplot;
