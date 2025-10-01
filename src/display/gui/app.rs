@@ -1,4 +1,4 @@
-// src/display/gui/app.rs v7
+// src/display/gui/app.rs v8
 //! Main GUI application structure - Pure egui implementation
 
 use crate::{gps::GpsData, config::GpsConfig, monitor::{GpsMonitor, GpsSource}};
@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::runtime::Runtime;
 
-use super::{panels, satellites::SatellitePanel, skyplot, settings::SettingsWindow};
+use super::{panels, satellites::SatellitePanel, skyplot, settings::SettingsWindow, waypoint_dialog::WaypointDialog};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SatelliteSortColumn {
@@ -40,6 +40,7 @@ pub struct GpsGuiApp {
     pub sat_sort_column: SatelliteSortColumn,
     pub sat_sort_ascending: bool,
     settings_window: SettingsWindow,
+    waypoint_dialog: WaypointDialog,
     monitor: Option<GpsMonitor>,
     connection_state: ConnectionState,
     error_message: Option<String>,
@@ -64,6 +65,7 @@ impl GpsGuiApp {
             sat_sort_column: SatelliteSortColumn::Constellation,
             sat_sort_ascending: true,
             settings_window: SettingsWindow::new(config.clone()),
+            waypoint_dialog: WaypointDialog::new(),
             monitor: None,
             connection_state: ConnectionState::Disconnected,
             error_message: None,
@@ -216,6 +218,10 @@ impl GpsGuiApp {
                     if ui.button("⚙ Settings").clicked() {
                         self.settings_window.open = true;
                     }
+
+                    if ui.button("📍 Waypoints").clicked() {
+                        self.waypoint_dialog.open = true;
+                    }
                 });
             });
         });
@@ -320,6 +326,11 @@ impl GpsGuiApp {
         }
     }
 
+    fn handle_waypoint_dialog(&mut self, ctx: &egui::Context) {
+        let data = self.data.read().unwrap().clone();
+        self.waypoint_dialog.show(ctx, &data);
+    }
+
     fn show_error_notification(&mut self, ctx: &egui::Context) {
         // Take ownership of error_message to avoid borrow issues
         if let Some(msg) = self.error_message.take() {
@@ -354,6 +365,7 @@ impl eframe::App for GpsGuiApp {
         self.render_bottom_panel(ctx);
         self.render_main_content(ctx);
         self.handle_settings_window(ctx);
+        self.handle_waypoint_dialog(ctx);
         self.show_error_notification(ctx);
     }
 
