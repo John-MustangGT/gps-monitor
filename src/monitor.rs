@@ -34,7 +34,11 @@ pub struct GpsMonitor {
     running: Arc<AtomicBool>,
 }
 
-impl GpsMonitor {
+
+    /// Start monitoring GPS data from the specified source
+    pub async fn start(&self, source: GpsSource) -> Result<()> {
+        match source {
+         impl GpsMonitor {
     /// Create a new GPS monitor
     pub fn new() -> Self {
         Self {
@@ -43,10 +47,26 @@ impl GpsMonitor {
         }
     }
 
-    /// Start monitoring GPS data from the specified source
-    pub async fn start(&self, source: GpsSource) -> Result<()> {
-        match source {
-            GpsSource::Serial { port, baudrate } => {
+    /// Create a new GPS monitor with shared data and running flag
+    pub fn new_with_shared(
+        data: Arc<RwLock<GpsData>>,
+        running: Arc<AtomicBool>,
+    ) -> Self {
+        Self {
+            data,
+            running,
+        }
+    }
+
+    /// Clone the monitor (shares data and running flag)
+    pub fn clone(&self) -> Self {
+        Self {
+            data: Arc::clone(&self.data),
+            running: Arc::clone(&self.running),
+        }
+    }
+
+    GpsSource::Serial { port, baudrate } => {
                 self.connect_serial(&port, baudrate).await?;
             }
             GpsSource::Gpsd { host, port } => {

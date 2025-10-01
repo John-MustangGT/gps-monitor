@@ -1,4 +1,4 @@
-// src/lib.rs
+// src/lib.rs v2
 //! GPS Monitor Library
 //! 
 //! A cross-platform GPS monitoring library that supports multiple GPS sources
@@ -8,11 +8,13 @@ pub mod gps;
 pub mod display;
 pub mod monitor;
 pub mod error;
+pub mod config;
 
 // Re-export main types for convenience
 pub use gps::data::GpsData;
 pub use monitor::{GpsMonitor, GpsSource};
 pub use error::{Result, GpsError};
+pub use config::GpsConfig;
 
 #[cfg(all(unix, not(target_os = "macos"), feature = "gui"))]
-pub use display::gui::GpsGuiApp;
+pub use display::gui::app::GpsGuiApp;

@@ -3,14 +3,14 @@ name = "gps-monitor"
 version = "0.1.0"
 edition = "2021"
 authors = ["Your Name <your.email@example.com>"]
-description = "Cross-platform GPS monitoring tool similar to gpsmon"
+description = "Cross-platform GPS monitoring tool with egui interface"
 license = "MIT"
 repository = "https://github.com/yourusername/gps-monitor"
 homepage = "https://github.com/yourusername/gps-monitor"
 documentation = "https://docs.rs/gps-monitor"
 readme = "README.md"
 keywords = ["gps", "nmea", "gpsd", "location", "monitoring"]
-categories = ["command-line-utilities", "hardware-support"]
+categories = ["command-line-utilities", "hardware-support", "gui"]
 
 # Binary configuration
 [[bin]]
@@ -33,17 +33,15 @@ tokio-serial = "5.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Command line interface
-clap = { version = "4.0", features = ["derive"] }
-
 # Date and time handling
 chrono = { version = "0.4", features = ["serde"] }
 
-# Terminal interface
-crossterm = "0.27"
-
 # Error handling
 anyhow = "1.0"
+
+# GUI (egui/eframe) - now required by default
+eframe = { version = "0.28", default-features = true }
+egui = { version = "0.28" }
 
 # Windows-specific dependencies (only compiled on Windows)
 [target.'cfg(windows)'.dependencies]
@@ -56,11 +54,7 @@ windows = { version = "0.52", features = [
     "Foundation",
     "Foundation_Collections",
 ] }
-
-# GUI dependencies (Linux with X11)
-[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
-eframe = { version = "0.28", optional = true }
-egui = { version = "0.28", optional = true }
+winreg = "0.52"
 
 [dev-dependencies]
 # Testing framework (included by default, but can specify version)
@@ -80,10 +74,10 @@ opt-level = 0
 debug = true
 split-debuginfo = "unpacked"
 
-# Optional features
+# Features
 [features]
-default = []
-gui = ["eframe", "egui"]
+default = ["gui"]
+gui = []
 
 # Package metadata
 [package.metadata.docs.rs]
@@ -97,9 +91,8 @@ maintainer = "Your Name <your.email@example.com>"
 copyright = "2024, Your Name <your.email@example.com>"
 license-file = ["LICENSE", "4"]
 extended-description = """\
-A cross-platform GPS monitoring tool that provides real-time GPS data display
-similar to gpsmon on Linux. Supports direct serial connections, gpsd daemon,
-and Windows Location Services."""
+A cross-platform GPS monitoring tool with modern egui interface.
+Supports direct serial connections, gpsd daemon, and Windows Location Services."""
 depends = "$auto"
 section = "utils"
 priority = "optional"

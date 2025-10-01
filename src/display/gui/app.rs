@@ -1,18 +1,18 @@
-// src/display/gui/app.rs v1
-//! Main GUI application structure and eframe::App implementation
+// src/display/gui/app.rs v3
+//! Main GUI application structure - Pure egui implementation
 
-use crate::gps::GpsData;
+use crate::{gps::GpsData, config::GpsConfig, monitor::{GpsMonitor, GpsSource}};
 use chrono::{DateTime, Utc};
 use eframe::egui;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc, RwLock,
+        Arc, RwLock,
     },
     time::Duration,
 };
 
-use super::{panels, satellites::SatellitePanel, skyplot};
+use super::{panels, satellites::SatellitePanel, skyplot, settings::SettingsWindow};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SatelliteSortColumn {
@@ -25,53 +25,149 @@ pub enum SatelliteSortColumn {
     Azimuth,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ConnectionState {
+    Disconnected,
+    Connecting,
+    Connected,
+    Error,
+}
+
 pub struct GpsGuiApp {
     data: Arc<RwLock<GpsData>>,
     running: Arc<AtomicBool>,
-    shutdown_tx: mpsc::Sender<()>,
     _last_update: Option<DateTime<Utc>>,
     pub sat_sort_column: SatelliteSortColumn,
     pub sat_sort_ascending: bool,
+    settings_window: SettingsWindow,
+    monitor: Option<GpsMonitor>,
+    connection_state: ConnectionState,
+    error_message: Option<String>,
+    config: GpsConfig,
 }
 
 impl GpsGuiApp {
-    pub fn new(
-        data: Arc<RwLock<GpsData>>,
-        running: Arc<AtomicBool>,
-        shutdown_tx: mpsc::Sender<()>,
-    ) -> Self {
-        Self {
+    pub fn new_from_config(config: GpsConfig) -> Self {
+        let data = Arc::new(RwLock::new(GpsData::new()));
+        let running = Arc::new(AtomicBool::new(false));
+        
+        let mut app = Self {
             data,
             running,
-            shutdown_tx,
             _last_update: None,
             sat_sort_column: SatelliteSortColumn::Constellation,
             sat_sort_ascending: true,
+            settings_window: SettingsWindow::new(config.clone()),
+            monitor: None,
+            connection_state: ConnectionState::Disconnected,
+            error_message: None,
+            config,
+        };
+        
+        // Auto-connect on startup
+        app.start_connection();
+        
+        app
+    }
+
+    fn start_connection(&mut self) {
+        self.connection_state = ConnectionState::Connecting;
+        self.error_message = None;
+        self.running.store(true, Ordering::Relaxed);
+        
+        let monitor = GpsMonitor::new_with_shared(
+            Arc::clone(&self.data),
+            Arc::clone(&self.running)
+        );
+        
+        let source = self.create_gps_source();
+        
+        // Start connection in background
+        let monitor_clone = monitor.clone();
+        tokio::spawn(async move {
+            if let Err(e) = monitor_clone.start(source).await {
+                eprintln!("Failed to start GPS connection: {}", e);
+            }
+        });
+        
+        self.monitor = Some(monitor);
+        self.connection_state = ConnectionState::Connected;
+    }
+
+    fn stop_connection(&mut self) {
+        self.running.store(false, Ordering::Relaxed);
+        self.monitor = None;
+        self.connection_state = ConnectionState::Disconnected;
+    }
+
+    fn restart_connection(&mut self) {
+        self.stop_connection();
+        // Small delay to ensure cleanup
+        std::thread::sleep(Duration::from_millis(500));
+        self.start_connection();
+    }
+
+    fn create_gps_source(&self) -> GpsSource {
+        match self.config.source_type.as_str() {
+            "serial" => {
+                let port = self.config.serial_port.clone().unwrap_or_default();
+                let baudrate = self.config.serial_baudrate.unwrap_or(9600);
+                GpsSource::Serial { port, baudrate }
+            }
+            "gpsd" => {
+                let host = self.config.gpsd_host.clone().unwrap_or_else(|| "localhost".to_string());
+                let port = self.config.gpsd_port.unwrap_or(2947);
+                GpsSource::Gpsd { host, port }
+            }
+            #[cfg(windows)]
+            "windows" => {
+                let accuracy = self.config.windows_accuracy.unwrap_or(10);
+                let interval = self.config.windows_interval.unwrap_or(1);
+                GpsSource::Windows { accuracy, interval }
+            }
+            _ => {
+                // Default to platform-specific source
+                #[cfg(windows)]
+                {
+                    GpsSource::Windows { accuracy: 10, interval: 1 }
+                }
+                #[cfg(not(windows))]
+                {
+                    GpsSource::Gpsd {
+                        host: "localhost".to_string(),
+                        port: 2947,
+                    }
+                }
+            }
         }
     }
-}
 
-impl eframe::App for GpsGuiApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Request repaint every second
-        ctx.request_repaint_after(Duration::from_secs(1));
-
-        let data = self.data.read().unwrap().clone();
-
-        // Top menu bar
+    fn render_top_menu(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.heading("🛰 GPS Monitor");
                 ui.separator();
                 
-                // Status indicator
-                let status_color = if data.timestamp.is_some() && data.is_recent() {
-                    egui::Color32::GREEN
-                } else {
-                    egui::Color32::RED
+                // Connection state indicator
+                let (status_color, status_text) = match self.connection_state {
+                    ConnectionState::Connected => {
+                        let data = self.data.read().unwrap();
+                        if data.timestamp.is_some() && data.is_recent() {
+                            (egui::Color32::GREEN, "Connected")
+                        } else {
+                            (egui::Color32::YELLOW, "Waiting for data")
+                        }
+                    }
+                    ConnectionState::Connecting => (egui::Color32::YELLOW, "Connecting..."),
+                    ConnectionState::Disconnected => (egui::Color32::RED, "Disconnected"),
+                    ConnectionState::Error => (egui::Color32::RED, "Error"),
                 };
-                ui.colored_label(status_color, "●");
                 
+                ui.colored_label(status_color, "●");
+                ui.label(status_text);
+                
+                // Last update timestamp
+                let data = self.data.read().unwrap();
                 let timestamp_str = match data.timestamp {
                     Some(ts) => ts.format("%H:%M:%S UTC").to_string(),
                     None => "No data".to_string(),
@@ -82,36 +178,64 @@ impl eframe::App for GpsGuiApp {
                     ui.separator();
                     ui.label(format!("Source: {}", source));
                 }
+                drop(data);
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("❌ Exit").clicked() {
-                        self.running.store(false, Ordering::Relaxed);
-                        let _ = self.shutdown_tx.send(());
+                        self.stop_connection();
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    
+                    // Connection control
+                    match self.connection_state {
+                        ConnectionState::Connected | ConnectionState::Connecting => {
+                            if ui.button("⏸ Disconnect").clicked() {
+                                self.stop_connection();
+                            }
+                        }
+                        ConnectionState::Disconnected | ConnectionState::Error => {
+                            if ui.button("▶ Connect").clicked() {
+                                self.start_connection();
+                            }
+                        }
+                    }
+                    
+                    if ui.button("🔄 Restart").clicked() {
+                        self.restart_connection();
+                    }
+                    
+                    if ui.button("⚙ Settings").clicked() {
+                        self.settings_window.open = true;
                     }
                 });
             });
         });
+    }
 
-        // Bottom panel for raw data
-        egui::TopBottomPanel::bottom("bottom_panel").resizable(true).default_height(80.0).show(ctx, |ui| {
-            ui.label("📝 Latest NMEA Sentences");
-            ui.separator();
-            
-            egui::ScrollArea::vertical().max_height(60.0).show(ui, |ui| {
-                if !data.raw_history.is_empty() {
-                    for sentence in data.raw_history.iter().rev() {
-                        ui.monospace(sentence);
+    fn render_bottom_panel(&self, ctx: &egui::Context) {
+        egui::TopBottomPanel::bottom("bottom_panel")
+            .resizable(true)
+            .default_height(80.0)
+            .show(ctx, |ui| {
+                ui.label("📝 Latest NMEA Sentences / Raw Data");
+                ui.separator();
+                
+                egui::ScrollArea::vertical().max_height(60.0).show(ui, |ui| {
+                    let data = self.data.read().unwrap();
+                    if !data.raw_history.is_empty() {
+                        for sentence in data.raw_history.iter().rev() {
+                            ui.monospace(sentence);
+                        }
+                    } else if !data.raw_data.is_empty() {
+                        ui.monospace(&data.raw_data);
+                    } else {
+                        ui.weak("No data received");
                     }
-                } else if !data.raw_data.is_empty() {
-                    ui.monospace(&data.raw_data);
-                } else {
-                    ui.weak("No data received");
-                }
+                });
             });
-        });
+    }
 
-        // Main content area with flexible layout
+    fn render_main_content(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             let available_size = ui.available_size();
             
@@ -127,6 +251,7 @@ impl eframe::App for GpsGuiApp {
                             ui.set_height(available_size.y - 10.0);
                             
                             egui::ScrollArea::vertical().show(ui, |ui| {
+                                let data = self.data.read().unwrap();
                                 panels::render_main_data_panel(ui, &data);
                             });
                         });
@@ -148,6 +273,7 @@ impl eframe::App for GpsGuiApp {
                         ui.group(|ui| {
                             ui.set_width(right_width - 10.0);
                             ui.set_height(sky_plot_height);
+                            let data = self.data.read().unwrap();
                             skyplot::render_sky_plot(ui, &data);
                         });
 
@@ -158,6 +284,7 @@ impl eframe::App for GpsGuiApp {
                             ui.set_width(right_width - 10.0);
                             ui.set_height(satellite_table_height.max(150.0));
                             
+                            let data = self.data.read().unwrap();
                             let mut sat_panel = SatellitePanel {
                                 sort_column: self.sat_sort_column,
                                 sort_ascending: self.sat_sort_ascending,
@@ -174,8 +301,44 @@ impl eframe::App for GpsGuiApp {
         });
     }
 
+    fn handle_settings_window(&mut self, ctx: &egui::Context) {
+        if self.settings_window.show(ctx) {
+            // Configuration was saved, reload it
+            self.config = self.settings_window.get_config().clone();
+            
+            // Ask user if they want to reconnect
+            self.error_message = Some("Settings saved! Click 'Restart' to apply changes.".to_string());
+        }
+    }
+}
+
+impl eframe::App for GpsGuiApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Request repaint every second
+        ctx.request_repaint_after(Duration::from_secs(1));
+
+        // Render UI components
+        self.render_top_menu(ctx);
+        self.render_bottom_panel(ctx);
+        self.render_main_content(ctx);
+        self.handle_settings_window(ctx);
+
+        // Show error notification if any
+        if let Some(ref msg) = self.error_message {
+            egui::Window::new("ℹ Notification")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label(msg);
+                    if ui.button("OK").clicked() {
+                        self.error_message = None;
+                    }
+                });
+        }
+    }
+
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        self.running.store(false, Ordering::Relaxed);
-        let _ = self.shutdown_tx.send(());
+        self.stop_connection();
     }
 }
