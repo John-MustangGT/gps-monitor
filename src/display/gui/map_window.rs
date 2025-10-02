@@ -57,13 +57,30 @@ impl MapWindow {
 
         let mut window_open = self.open;
         
-        egui::Window::new("🗺 Map View")
-            .open(&mut window_open)
-            .default_size([800.0, 600.0])
-            .resizable(true)
-            .show(ctx, |ui| {
-                self.render_window_contents(ui, gps_data, exporter);
-            });
+        // Create a separate native window (viewport) for the map
+        ctx.show_viewport_immediate(
+            egui::ViewportId::from_hash_of("map_window"),
+            egui::ViewportBuilder::default()
+                .with_title("🗺 GPS Map")
+                .with_inner_size([900.0, 700.0])
+                .with_min_inner_size([600.0, 400.0])
+                .with_close_button(true),
+            |ctx, class| {
+                assert!(
+                    class == egui::ViewportClass::Immediate,
+                    "This viewport should be immediate"
+                );
+                
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    self.render_window_contents(ui, gps_data, exporter);
+                });
+
+                // Check if window was closed
+                if ctx.input(|i| i.viewport().close_requested()) {
+                    window_open = false;
+                }
+            },
+        );
         
         self.open = window_open;
     }

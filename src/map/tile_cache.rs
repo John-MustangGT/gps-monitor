@@ -1,10 +1,10 @@
-// src/map/tile_cache.rs v1
-//! OpenStreetMap tile downloading and caching
+// src/map/tile_cache.rs v2
+//! OpenStreetMap tile downloading and caching with resource management
 
 use crate::error::{Result, GpsError};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Calculate tile coordinates from lat/lon and zoom level
 pub fn lat_lon_to_tile(lat: f64, lon: f64, zoom: u8) -> (u32, u32) {
@@ -28,7 +28,9 @@ pub fn tile_to_lat_lon(x: u32, y: u32, zoom: u8) -> (f64, f64) {
 pub struct TileCache {
     cache_dir: PathBuf,
     memory_cache: Arc<Mutex<HashMap<(u8, u32, u32), Arc<Vec<u8>>>>>,
+    downloading: Arc<Mutex<HashSet<(u8, u32, u32)>>>,
     max_memory_tiles: usize,
+    max_concurrent_downloads: usize,
 }
 
 impl TileCache {
@@ -39,7 +41,9 @@ impl TileCache {
         Ok(Self {
             cache_dir,
             memory_cache: Arc::new(Mutex::new(HashMap::new())),
-            max_memory_tiles: 100, // Keep 100 tiles in memory
+            downloading: Arc::new(Mutex::new(HashSet::new())),
+            max_memory_tiles: 100,
+            max_concurrent_downloads: 4,
         })
     }
 
@@ -69,11 +73,29 @@ impl TileCache {
         Err(GpsError::Other("Tile not in cache".to_string()))
     }
 
-    /// Download tile in background (non-blocking)
+    /// Download tile in background (non-blocking) with concurrency limit
     pub fn download_tile_async(&self, zoom: u8, x: u32, y: u32) {
+        let key = (zoom, x, y);
+
+        // Check if already downloading
+        {
+            let mut downloading = self.downloading.lock().unwrap();
+            
+            // Limit concurrent downloads
+            if downloading.len() >= self.max_concurrent_downloads {
+                return;
+            }
+            
+            if downloading.contains(&key) {
+                return;
+            }
+            
+            downloading.insert(key);
+        }
+
         let cache_dir = self.cache_dir.clone();
         let memory_cache = Arc::clone(&self.memory_cache);
-        let key = (zoom, x, y);
+        let downloading = Arc::clone(&self.downloading);
 
         std::thread::spawn(move || {
             if let Ok(bytes) = Self::download_tile(zoom, x, y) {
@@ -90,7 +112,7 @@ impl TileCache {
                 
                 // Limit memory cache size
                 if cache.len() >= 100 {
-                    // Remove oldest entries (simple approach)
+                    // Remove oldest entries
                     if let Some(first_key) = cache.keys().next().cloned() {
                         cache.remove(&first_key);
                     }
@@ -98,6 +120,9 @@ impl TileCache {
                 
                 cache.insert(key, tile);
             }
+            
+            // Remove from downloading set
+            downloading.lock().unwrap().remove(&key);
         });
     }
 
@@ -150,12 +175,15 @@ impl TileCache {
         cache.insert(key, tile);
     }
 
-    /// Preload tiles around a location
+    /// Preload tiles around a location (limited to prevent resource exhaustion)
     pub fn preload_area(&self, center_lat: f64, center_lon: f64, zoom: u8, radius: u32) {
         let (center_x, center_y) = lat_lon_to_tile(center_lat, center_lon, zoom);
         
-        for dx in 0..=radius {
-            for dy in 0..=radius {
+        // Limit preload radius to prevent too many downloads
+        let limited_radius = radius.min(2);
+        
+        for dx in 0..=limited_radius {
+            for dy in 0..=limited_radius {
                 // Download in all 4 quadrants
                 self.download_tile_async(zoom, center_x + dx, center_y + dy);
                 if dx > 0 {
@@ -180,20 +208,26 @@ impl TileCache {
     pub fn get_stats(&self) -> CacheStats {
         let memory_count = self.memory_cache.lock().unwrap().len();
         
-        // Count disk cache files
+        // Count disk cache files recursively
         let mut disk_count = 0;
         let mut disk_size = 0u64;
         
-        if let Ok(entries) = std::fs::read_dir(&self.cache_dir) {
-            for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_file() {
-                        disk_count += 1;
-                        disk_size += metadata.len();
+        fn walk_dir(path: &PathBuf, count: &mut usize, size: &mut u64) {
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    if let Ok(metadata) = entry.metadata() {
+                        if metadata.is_file() {
+                            *count += 1;
+                            *size += metadata.len();
+                        } else if metadata.is_dir() {
+                            walk_dir(&entry.path(), count, size);
+                        }
                     }
                 }
             }
         }
+        
+        walk_dir(&self.cache_dir, &mut disk_count, &mut disk_size);
 
         CacheStats {
             memory_tiles: memory_count,

@@ -1,7 +1,7 @@
-// src/display/gui/app.rs v9
+// src/display/gui/app.rs v10
 //! Main GUI application structure - Pure egui implementation
 
-use crate::{gps::GpsData, config::GpsConfig, monitor::{GpsMonitor, GpsSource}};
+use crate::{gps::GpsData, config::GpsConfig, monitor::{GpsMonitor, GpsSource}, map::TileCache};
 use chrono::{DateTime, Utc};
 use eframe::egui;
 use std::{
@@ -10,10 +10,11 @@ use std::{
         Arc, RwLock,
     },
     time::Duration,
+    path::PathBuf,
 };
 use tokio::runtime::Runtime;
 
-use super::{panels, satellites::SatellitePanel, skyplot, settings::SettingsWindow, waypoint_dialog::WaypointDialog};
+use super::{panels, satellites::SatellitePanel, skyplot, settings::SettingsWindow, waypoint_dialog::WaypointDialog, map_window::MapWindow};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SatelliteSortColumn {
@@ -41,6 +42,7 @@ pub struct GpsGuiApp {
     pub sat_sort_ascending: bool,
     settings_window: SettingsWindow,
     waypoint_dialog: WaypointDialog,
+    map_window: MapWindow,
     monitor: Option<GpsMonitor>,
     connection_state: ConnectionState,
     error_message: Option<String>,
@@ -58,6 +60,11 @@ impl GpsGuiApp {
             Runtime::new().expect("Failed to create Tokio runtime")
         );
         
+        // Create tile cache directory
+        let cache_dir = Self::get_cache_directory();
+        let tile_cache = TileCache::new(cache_dir)
+            .expect("Failed to create tile cache");
+        
         let mut app = Self {
             data,
             running,
@@ -66,6 +73,7 @@ impl GpsGuiApp {
             sat_sort_ascending: true,
             settings_window: SettingsWindow::new(config.clone()),
             waypoint_dialog: WaypointDialog::new(),
+            map_window: MapWindow::new(tile_cache),
             monitor: None,
             connection_state: ConnectionState::Disconnected,
             error_message: None,
@@ -77,6 +85,13 @@ impl GpsGuiApp {
         app.start_connection();
         
         app
+    }
+
+    fn get_cache_directory() -> PathBuf {
+        let mut path = dirs::cache_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("gps-monitor");
+        path.push("tiles");
+        path
     }
 
     fn start_connection(&mut self) {
@@ -197,6 +212,22 @@ impl GpsGuiApp {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                     
+                    if ui.button("⚙ Settings").clicked() {
+                        self.settings_window.open = true;
+                    }
+
+                    if ui.button("📍 Waypoints").clicked() {
+                        self.waypoint_dialog.open = true;
+                    }
+                    
+                    if ui.button("🗺 Map").clicked() {
+                        self.map_window.open = true;
+                    }
+                    
+                    if ui.button("🔄 Restart").clicked() {
+                        self.restart_connection();
+                    }
+                    
                     // Connection control
                     match self.connection_state {
                         ConnectionState::Connected | ConnectionState::Connecting => {
@@ -209,18 +240,6 @@ impl GpsGuiApp {
                                 self.start_connection();
                             }
                         }
-                    }
-                    
-                    if ui.button("🔄 Restart").clicked() {
-                        self.restart_connection();
-                    }
-                    
-                    if ui.button("⚙ Settings").clicked() {
-                        self.settings_window.open = true;
-                    }
-
-                    if ui.button("📍 Waypoints").clicked() {
-                        self.waypoint_dialog.open = true;
                     }
                 });
             });
@@ -331,6 +350,16 @@ impl GpsGuiApp {
         self.waypoint_dialog.show(ctx, &data);
     }
 
+    fn handle_map_window(&mut self, ctx: &egui::Context) {
+        let data = self.data.read().unwrap().clone();
+        self.map_window.show(ctx, &data, &self.waypoint_dialog.exporter);
+        
+        // Clean up when window closes
+        if !self.map_window.open {
+            self.map_window.on_close();
+        }
+    }
+
     fn show_error_notification(&mut self, ctx: &egui::Context) {
         // Take ownership of error_message to avoid borrow issues
         if let Some(msg) = self.error_message.take() {
@@ -366,6 +395,7 @@ impl eframe::App for GpsGuiApp {
         self.render_main_content(ctx);
         self.handle_settings_window(ctx);
         self.handle_waypoint_dialog(ctx);
+        self.handle_map_window(ctx);
         self.show_error_notification(ctx);
     }
 
