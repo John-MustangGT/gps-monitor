@@ -1,4 +1,4 @@
-# Cargo.toml v3
+# Cargo.toml v4
 [package]
 name = "gps-monitor"
 version = "0.1.0"
@@ -52,6 +52,9 @@ reqwest = { version = "0.11", features = ["blocking"] }
 
 # Image loading for map tiles
 image = "0.24"
+
+# Directory utilities
+dirs = "5.0"
 
 # Windows-specific dependencies (only compiled on Windows)
 [target.'cfg(windows)'.dependencies]

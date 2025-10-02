@@ -1,7 +1,7 @@
-// src/display/gui/map_window.rs v1
+// src/display/gui/map_window.rs v2
 //! Map window with live position, tracks, and waypoints
 
-use crate::{gps::GpsData, waypoint::{WaypointExporter, TrackPoint}, map::TileCache};
+use crate::{gps::GpsData, waypoint::WaypointExporter, map::TileCache};
 use eframe::egui;
 use std::collections::HashMap;
 
@@ -55,71 +55,79 @@ impl MapWindow {
             }
         }
 
+        let mut window_open = self.open;
+        
         egui::Window::new("🗺 Map View")
-            .open(&mut self.open)
+            .open(&mut window_open)
             .default_size([800.0, 600.0])
             .resizable(true)
             .show(ctx, |ui| {
-                // Top controls
-                ui.horizontal(|ui| {
-                    ui.label("Zoom:");
-                    if ui.button("➖").clicked() && self.zoom > 1 {
-                        self.zoom -= 1;
-                        self.preload_triggered = false;
-                    }
-                    ui.label(format!("{}", self.zoom));
-                    if ui.button("➕").clicked() && self.zoom < 18 {
-                        self.zoom += 1;
-                        self.preload_triggered = false;
-                    }
-
-                    ui.separator();
-
-                    ui.checkbox(&mut self.follow_position, "📍 Follow GPS");
-                    
-                    ui.separator();
-                    
-                    ui.checkbox(&mut self.show_tracks, "Show Tracks");
-                    ui.checkbox(&mut self.show_waypoints, "Show Waypoints");
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let stats = self.tile_cache.get_stats();
-                        ui.label(format!("Cache: {} tiles ({:.1} MB)", 
-                            stats.disk_tiles, stats.disk_size_mb));
-                        
-                        if ui.button("🗑 Clear Cache").clicked() {
-                            let _ = self.tile_cache.clear_disk_cache();
-                            self.tile_cache.clear_memory_cache();
-                            self.loaded_tiles.clear();
-                        }
-                    });
-                });
-
-                ui.separator();
-
-                // Map display area
-                let available_size = ui.available_size();
-                let (response, painter) = ui.allocate_painter(available_size, egui::Sense::drag());
-
-                // Handle dragging
-                if response.dragged() && !self.follow_position {
-                    let delta = response.drag_delta();
-                    self.pan_map(delta, available_size.x, available_size.y);
-                }
-
-                // Render map
-                self.render_map(ctx, &painter, response.rect, gps_data, exporter);
-
-                // Show current coordinates
-                ui.separator();
-                ui.horizontal(|ui| {
-                    ui.label(format!("Center: {:.6}, {:.6}", self.center_lat, self.center_lon));
-                    if let (Some(lat), Some(lon)) = (gps_data.latitude, gps_data.longitude) {
-                        ui.separator();
-                        ui.label(format!("GPS: {:.6}, {:.6}", lat, lon));
-                    }
-                });
+                self.render_window_contents(ui, gps_data, exporter);
             });
+        
+        self.open = window_open;
+    }
+
+    fn render_window_contents(&mut self, ui: &mut egui::Ui, gps_data: &GpsData, exporter: &WaypointExporter) {
+        // Top controls
+        ui.horizontal(|ui| {
+            ui.label("Zoom:");
+            if ui.button("➖").clicked() && self.zoom > 1 {
+                self.zoom -= 1;
+                self.preload_triggered = false;
+            }
+            ui.label(format!("{}", self.zoom));
+            if ui.button("➕").clicked() && self.zoom < 18 {
+                self.zoom += 1;
+                self.preload_triggered = false;
+            }
+
+            ui.separator();
+
+            ui.checkbox(&mut self.follow_position, "📍 Follow GPS");
+            
+            ui.separator();
+            
+            ui.checkbox(&mut self.show_tracks, "Show Tracks");
+            ui.checkbox(&mut self.show_waypoints, "Show Waypoints");
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let stats = self.tile_cache.get_stats();
+                ui.label(format!("Cache: {} tiles ({:.1} MB)", 
+                    stats.disk_tiles, stats.disk_size_mb));
+                
+                if ui.button("🗑 Clear Cache").clicked() {
+                    let _ = self.tile_cache.clear_disk_cache();
+                    self.tile_cache.clear_memory_cache();
+                    self.loaded_tiles.clear();
+                }
+            });
+        });
+
+        ui.separator();
+
+        // Map display area
+        let available_size = ui.available_size();
+        let (response, painter) = ui.allocate_painter(available_size, egui::Sense::drag());
+
+        // Handle dragging
+        if response.dragged() && !self.follow_position {
+            let delta = response.drag_delta();
+            self.pan_map(delta);
+        }
+
+        // Render map
+        self.render_map(ui.ctx(), &painter, response.rect, gps_data, exporter);
+
+        // Show current coordinates
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(format!("Center: {:.6}, {:.6}", self.center_lat, self.center_lon));
+            if let (Some(lat), Some(lon)) = (gps_data.latitude, gps_data.longitude) {
+                ui.separator();
+                ui.label(format!("GPS: {:.6}, {:.6}", lat, lon));
+            }
+        });
     }
 
     fn render_map(
@@ -244,7 +252,7 @@ impl MapWindow {
                     );
 
                     let texture = ctx.load_texture(
-                        format!("tile_{}_{_{}}", zoom, x, y),
+                        format!("tile_{}_{}_{}", zoom, x, y),
                         color_image,
                         egui::TextureOptions::LINEAR,
                     );
@@ -318,7 +326,7 @@ impl MapWindow {
         }
     }
 
-    fn pan_map(&mut self, delta: egui::Vec2, width: f32, height: f32) {
+    fn pan_map(&mut self, delta: egui::Vec2) {
         let n = 2_f64.powi(self.zoom as i32);
         let pixels_per_degree_lon = n * TILE_SIZE as f64 / 360.0;
         

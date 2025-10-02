@@ -1,4 +1,4 @@
-// src/display/gui/mod.rs v9
+// src/display/gui/mod.rs v10
 //! GUI display module - Pure egui implementation
 
 pub mod app;
@@ -8,7 +8,9 @@ mod skyplot;
 mod settings;
 mod waypoint_dialog;
 mod track_recorder;
+mod map_window;
 
 pub use app::{GpsGuiApp, SatelliteSortColumn};
 pub use settings::SettingsWindow;
 pub use waypoint_dialog::WaypointDialog;
+pub use map_window::MapWindow;

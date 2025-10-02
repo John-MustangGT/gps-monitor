@@ -1,4 +1,4 @@
-// src/display/gui/waypoint_dialog.rs v5
+// src/display/gui/waypoint_dialog.rs v6
 //! Waypoint recording and track recording dialog UI
 
 use crate::{gps::GpsData, waypoint::{Waypoint, WaypointExporter, WaypointFormat}};
@@ -10,11 +10,11 @@ pub struct WaypointDialog {
     pub open: bool,
     waypoint_name: String,
     waypoint_description: String,
-    exporter: WaypointExporter,
+    pub exporter: WaypointExporter,  // Made public so MapWindow can access it
     selected_format: WaypointFormat,
     export_path: String,
     status_message: Option<String>,
-    
+
     // Track recording
     track_recorder: TrackRecorder,
     track_name_input: String,
