@@ -1,3 +1,4 @@
+# Cargo.toml v3
 [package]
 name = "gps-monitor"
 version = "0.1.0"
@@ -45,6 +46,12 @@ crossterm = "0.27"
 # GUI (egui/eframe) - now required by default
 eframe = { version = "0.28", default-features = true }
 egui = { version = "0.28" }
+
+# HTTP client for map tiles
+reqwest = { version = "0.11", features = ["blocking"] }
+
+# Image loading for map tiles
+image = "0.24"
 
 # Windows-specific dependencies (only compiled on Windows)
 [target.'cfg(windows)'.dependencies]
