@@ -8,7 +8,6 @@ use {
     std::time::Duration,
     tokio::time::sleep,
     windows::{
-        core::*,
         Devices::Geolocation::*,
         Foundation::*,
     },
@@ -82,11 +81,10 @@ pub fn update_from_position(data: &mut GpsData, position: &Geoposition) -> Resul
                 data.latitude = Some(pos.Latitude);
                 data.longitude = Some(pos.Longitude);
                 
-                // Altitude (optional)
-                if let Ok(alt) = pos.Altitude {
-                    if alt != 0.0 {
-                        data.altitude = Some(alt);
-                    }
+                // Altitude (optional) - it's a direct f64 value, not a Result
+                let alt = pos.Altitude;
+                if alt != 0.0 {
+                    data.altitude = Some(alt);
                 }
             }
         }
@@ -112,21 +110,12 @@ pub fn update_from_position(data: &mut GpsData, position: &Geoposition) -> Resul
     }
     
     // Get source information for raw data display
-    if let Ok(source) = position.Source() {
-        let source_str = match source {
-            PositionSource::Cellular => "Cellular",
-            PositionSource::Satellite => "GPS Satellite",
-            PositionSource::WiFi => "Wi-Fi",
-            PositionSource::IPAddress => "IP Address",
-            PositionSource::Unknown => "Unknown",
-            _ => "Other",
-        };
-        data.raw_data = format!(
-            "Source: {}, Accuracy: {:.1}m", 
-            source_str, 
-            data.accuracy.unwrap_or(0.0)
-        );
-    }
+    // Note: Geoposition doesn't have a Source() method in newer Windows API
+    // We'll just use a generic source string
+    data.raw_data = format!(
+        "Source: Windows Location Service, Accuracy: {:.1}m", 
+        data.accuracy.unwrap_or(0.0)
+    );
     
     Ok(())
 }

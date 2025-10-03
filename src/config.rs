@@ -1,9 +1,8 @@
-// src/config.rs v1
+// src/config.rs v2
 //! Configuration management with platform-specific storage
 
 use crate::error::{Result, GpsError};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GpsConfig {
@@ -92,14 +91,22 @@ impl GpsConfig {
                 let source_type: String = key.get_value("SourceType")
                     .unwrap_or_else(|_| "windows".to_string());
                 
+                // Convert u32 to u16 for gpsd_port
+                let gpsd_port_u32: Option<u32> = key.get_value("GpsdPort").ok();
+                let gpsd_port = gpsd_port_u32.map(|p| p as u16);
+                
+                // Convert u32 to u64 for windows_interval
+                let windows_interval_u32: Option<u32> = key.get_value("WindowsInterval").ok();
+                let windows_interval = windows_interval_u32.map(|i| i as u64);
+                
                 let config = Self {
                     source_type,
                     serial_port: key.get_value("SerialPort").ok(),
                     serial_baudrate: key.get_value("SerialBaudrate").ok(),
                     gpsd_host: key.get_value("GpsdHost").ok(),
-                    gpsd_port: key.get_value("GpsdPort").ok(),
+                    gpsd_port,
                     windows_accuracy: key.get_value("WindowsAccuracy").ok(),
-                    windows_interval: key.get_value("WindowsInterval").ok(),
+                    windows_interval,
                 };
                 
                 Ok(config)
@@ -141,8 +148,10 @@ impl GpsConfig {
                 .map_err(|e| GpsError::Other(format!("Failed to save GpsdHost: {}", e)))?;
         }
         
+        // Convert u16 to u32 for registry storage
         if let Some(port) = self.gpsd_port {
-            key.set_value("GpsdPort", &port)
+            let port_u32 = port as u32;
+            key.set_value("GpsdPort", &port_u32)
                 .map_err(|e| GpsError::Other(format!("Failed to save GpsdPort: {}", e)))?;
         }
         
@@ -151,8 +160,10 @@ impl GpsConfig {
                 .map_err(|e| GpsError::Other(format!("Failed to save WindowsAccuracy: {}", e)))?;
         }
         
+        // Convert u64 to u32 for registry storage
         if let Some(interval) = self.windows_interval {
-            key.set_value("WindowsInterval", &interval)
+            let interval_u32 = interval as u32;
+            key.set_value("WindowsInterval", &interval_u32)
                 .map_err(|e| GpsError::Other(format!("Failed to save WindowsInterval: {}", e)))?;
         }
         
@@ -199,7 +210,9 @@ impl GpsConfig {
 
     /// Get config file path for Unix systems
     #[cfg(not(windows))]
-    fn get_config_path() -> Result<PathBuf> {
+    fn get_config_path() -> Result<std::path::PathBuf> {
+        use std::path::PathBuf;
+        
         let home = std::env::var("HOME")
             .map_err(|_| GpsError::Other("HOME environment variable not set".to_string()))?;
         
