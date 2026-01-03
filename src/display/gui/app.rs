@@ -146,6 +146,10 @@ impl GpsGuiApp {
                 let port = self.config.gpsd_port.unwrap_or(2947);
                 GpsSource::Gpsd { host, port }
             }
+            "openpony" => {
+                let url = self.config.openpony_url.clone().unwrap_or_else(|| "ws://192.168.4.1:80".to_string());
+                GpsSource::OpenPony { url }
+            }
             #[cfg(windows)]
             "windows" => {
                 let accuracy = self.config.windows_accuracy.unwrap_or(10);
@@ -287,6 +291,13 @@ impl GpsGuiApp {
                             egui::ScrollArea::vertical().show(ui, |ui| {
                                 let data = self.data.read().unwrap();
                                 panels::render_main_data_panel(ui, &data);
+
+                                // Add IMU panel if we have IMU data
+                                if data.acceleration.is_some() || data.rotation.is_some() {
+                                    ui.add_space(10.0);
+                                    ui.separator();
+                                    super::imu_panel::render_imu_panel(ui, &data);
+                                }
                             });
                         });
                     }

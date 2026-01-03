@@ -8,6 +8,7 @@ use eframe::egui;
 pub enum SourceType {
     Serial,
     Gpsd,
+    OpenPony,
     #[cfg(windows)]
     Windows,
 }
@@ -21,6 +22,7 @@ pub struct SettingsWindow {
     serial_baudrate: String,
     gpsd_host: String,
     gpsd_port: String,
+    openpony_url: String,
     #[cfg(windows)]
     windows_accuracy: String,
     #[cfg(windows)]
@@ -33,6 +35,7 @@ impl SettingsWindow {
         let source_type = match config.source_type.as_str() {
             "serial" => SourceType::Serial,
             "gpsd" => SourceType::Gpsd,
+            "openpony" => SourceType::OpenPony,
             #[cfg(windows)]
             "windows" => SourceType::Windows,
             _ => {
@@ -53,6 +56,7 @@ impl SettingsWindow {
             serial_baudrate: config.serial_baudrate.map_or("9600".to_string(), |b| b.to_string()),
             gpsd_host: config.gpsd_host.clone().unwrap_or_else(|| "localhost".to_string()),
             gpsd_port: config.gpsd_port.map_or("2947".to_string(), |p| p.to_string()),
+            openpony_url: config.openpony_url.clone().unwrap_or_else(|| "ws://192.168.4.1:80".to_string()),
             #[cfg(windows)]
             windows_accuracy: config.windows_accuracy.map_or("10".to_string(), |a| a.to_string()),
             #[cfg(windows)]
@@ -90,6 +94,9 @@ impl SettingsWindow {
                     if ui.radio_value(&mut self.source_type, SourceType::Gpsd, "gpsd").clicked() {
                         self.status_message = None;
                     }
+                    if ui.radio_value(&mut self.source_type, SourceType::OpenPony, "OpenPonyLogger").clicked() {
+                        self.status_message = None;
+                    }
                     #[cfg(windows)]
                     if ui.radio_value(&mut self.source_type, SourceType::Windows, "Windows Location").clicked() {
                         self.status_message = None;
@@ -105,6 +112,9 @@ impl SettingsWindow {
                     }
                     SourceType::Gpsd => {
                         self.render_gpsd_settings(ui);
+                    }
+                    SourceType::OpenPony => {
+                        self.render_openpony_settings(ui);
                     }
                     #[cfg(windows)]
                     SourceType::Windows => {
@@ -192,6 +202,23 @@ impl SettingsWindow {
         ui.small("Default: localhost:2947");
     }
 
+    fn render_openpony_settings(&mut self, ui: &mut egui::Ui) {
+        ui.label("OpenPonyLogger WebSocket Settings:");
+
+        egui::Grid::new("openpony_settings")
+            .num_columns(2)
+            .spacing([10.0, 8.0])
+            .show(ui, |ui| {
+                ui.label("WebSocket URL:");
+                ui.text_edit_singleline(&mut self.openpony_url);
+                ui.end_row();
+            });
+
+        ui.add_space(5.0);
+        ui.small("Default: ws://192.168.4.1:80 (OpenPonyLogger access point)");
+        ui.small("Receives GPS + IMU telemetry (accelerometer, gyroscope, magnetometer)");
+    }
+
     #[cfg(windows)]
     fn render_windows_settings(&mut self, ui: &mut egui::Ui) {
         ui.label("Windows Location Service Settings:");
@@ -246,6 +273,19 @@ impl SettingsWindow {
                 };
 
                 self.config.update_gpsd(self.gpsd_host.clone(), port);
+            }
+            SourceType::OpenPony => {
+                if self.openpony_url.is_empty() {
+                    self.status_message = Some("Error: OpenPony URL cannot be empty".to_string());
+                    return false;
+                }
+
+                if !self.openpony_url.starts_with("ws://") && !self.openpony_url.starts_with("wss://") {
+                    self.status_message = Some("Error: URL must start with ws:// or wss://".to_string());
+                    return false;
+                }
+
+                self.config.update_openpony(self.openpony_url.clone());
             }
             #[cfg(windows)]
             SourceType::Windows => {

@@ -9,6 +9,7 @@ mod settings;
 mod waypoint_dialog;
 mod track_recorder;
 mod map_window;
+pub mod imu_panel;
 
 pub use app::{GpsGuiApp, SatelliteSortColumn};
 pub use settings::SettingsWindow;
