@@ -56,6 +56,10 @@ image = "0.24"
 # Directory utilities
 dirs = "5.0"
 
+# WebSocket communication
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
+
 # Windows-specific dependencies (only compiled on Windows)
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.52", features = [

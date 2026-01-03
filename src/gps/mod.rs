@@ -4,6 +4,7 @@
 pub mod data;
 pub mod nmea;
 pub mod gpsd;
+pub mod openpony;
 
 #[cfg(windows)]
 pub mod windows;

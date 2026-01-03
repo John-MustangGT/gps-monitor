@@ -6,11 +6,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GpsConfig {
-    pub source_type: String,  // "serial", "gpsd", "windows"
+    pub source_type: String,  // "serial", "gpsd", "openpony", "windows"
     pub serial_port: Option<String>,
     pub serial_baudrate: Option<u32>,
     pub gpsd_host: Option<String>,
     pub gpsd_port: Option<u16>,
+    pub openpony_url: Option<String>,
     pub windows_accuracy: Option<u32>,
     pub windows_interval: Option<u64>,
 }
@@ -32,6 +33,7 @@ impl GpsConfig {
                 serial_baudrate: Some(9600),
                 gpsd_host: Some("localhost".to_string()),
                 gpsd_port: Some(2947),
+                openpony_url: Some("ws://192.168.4.1:80".to_string()),
                 windows_accuracy: Some(10),
                 windows_interval: Some(1),
             }
@@ -45,6 +47,7 @@ impl GpsConfig {
                 serial_baudrate: Some(9600),
                 gpsd_host: Some("localhost".to_string()),
                 gpsd_port: Some(2947),
+                openpony_url: Some("ws://192.168.4.1:80".to_string()),
                 windows_accuracy: Some(10),
                 windows_interval: Some(1),
             }
@@ -105,6 +108,7 @@ impl GpsConfig {
                     serial_baudrate: key.get_value("SerialBaudrate").ok(),
                     gpsd_host: key.get_value("GpsdHost").ok(),
                     gpsd_port,
+                    openpony_url: key.get_value("OpenPonyUrl").ok(),
                     windows_accuracy: key.get_value("WindowsAccuracy").ok(),
                     windows_interval,
                 };
@@ -154,7 +158,12 @@ impl GpsConfig {
             key.set_value("GpsdPort", &port_u32)
                 .map_err(|e| GpsError::Other(format!("Failed to save GpsdPort: {}", e)))?;
         }
-        
+
+        if let Some(ref url) = self.openpony_url {
+            key.set_value("OpenPonyUrl", url)
+                .map_err(|e| GpsError::Other(format!("Failed to save OpenPonyUrl: {}", e)))?;
+        }
+
         if let Some(accuracy) = self.windows_accuracy {
             key.set_value("WindowsAccuracy", &accuracy)
                 .map_err(|e| GpsError::Other(format!("Failed to save WindowsAccuracy: {}", e)))?;
@@ -243,6 +252,12 @@ impl GpsConfig {
         self.source_type = "windows".to_string();
         self.windows_accuracy = Some(accuracy);
         self.windows_interval = Some(interval);
+    }
+
+    /// Update OpenPonyLogger settings
+    pub fn update_openpony(&mut self, url: String) {
+        self.source_type = "openpony".to_string();
+        self.openpony_url = Some(url);
     }
 }
 

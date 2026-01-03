@@ -4,7 +4,7 @@
 use crate::{
     display::terminal::TerminalDisplay,
     error::{Result, GpsError},
-    gps::{data::GpsData, gpsd, nmea},
+    gps::{data::GpsData, gpsd, nmea, openpony},
 };
 use std::{
     sync::{
@@ -24,6 +24,7 @@ use crate::gps::windows;
 pub enum GpsSource {
     Serial { port: String, baudrate: u32 },
     Gpsd { host: String, port: u16 },
+    OpenPony { url: String },
     #[cfg(windows)]
     Windows { accuracy: u32, interval: u64 },
 }
@@ -70,6 +71,9 @@ impl GpsMonitor {
             }
             GpsSource::Gpsd { host, port } => {
                 self.connect_gpsd(&host, port).await?;
+            }
+            GpsSource::OpenPony { url } => {
+                self.connect_openpony(&url).await?;
             }
             #[cfg(windows)]
             GpsSource::Windows { accuracy, interval } => {
@@ -162,6 +166,45 @@ impl GpsMonitor {
                         eprintln!("Error reading from gpsd: {}", e);
                         break;
                     }
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Connect to OpenPonyLogger WebSocket
+    async fn connect_openpony(&self, url: &str) -> Result<()> {
+        println!("Connecting to OpenPonyLogger at {}...", url);
+
+        let ws_stream = openpony::connect_openpony(url).await?;
+        println!("Connected successfully!");
+
+        let data = Arc::clone(&self.data);
+        let running = Arc::clone(&self.running);
+
+        tokio::spawn(async move {
+            use futures_util::StreamExt;
+
+            let (_, mut read) = futures_util::stream::StreamExt::split(ws_stream);
+
+            while running.load(Ordering::Relaxed) {
+                match read.next().await {
+                    Some(Ok(msg)) => {
+                        if let Ok(text) = msg.to_text() {
+                            let mut data_guard = data.write().unwrap();
+                            data_guard.update_timestamp();
+
+                            if let Err(e) = openpony::parse_openpony_json(&mut data_guard, text) {
+                                eprintln!("Error parsing OpenPonyLogger JSON: {}", e);
+                            }
+                        }
+                    }
+                    Some(Err(e)) => {
+                        eprintln!("WebSocket error: {}", e);
+                        break;
+                    }
+                    None => break,
                 }
             }
         });

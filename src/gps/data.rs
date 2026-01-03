@@ -58,7 +58,8 @@ pub struct GpsData {
     pub longitude: Option<f64>,
     pub altitude: Option<f64>,
     pub speed: Option<f64>,      // km/h
-    pub course: Option<f64>,     // degrees
+    pub course: Option<f64>,     // degrees (GPS track/COG)
+    pub compass_heading: Option<f64>, // degrees (magnetometer heading)
     pub satellites: Option<u8>,
     pub fix_quality: Option<u8>,
     pub hdop: Option<f64>,
@@ -68,6 +69,10 @@ pub struct GpsData {
     pub raw_data: String,
     pub raw_history: Vec<String>, // Recent NMEA sentences
     pub satellites_info: Vec<SatelliteInfo>, // Detailed satellite information
+
+    // IMU sensor data (from OpenPonyLogger or similar sources)
+    pub acceleration: Option<(f64, f64, f64)>, // (gx, gy, gz) in g-force
+    pub rotation: Option<(f64, f64, f64)>,     // (rx, ry, rz) in degrees/second
 }
 
 impl GpsData {
