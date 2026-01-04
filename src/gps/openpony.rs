@@ -4,7 +4,7 @@
 //! This module provides WebSocket client functionality to connect to OpenPonyLogger
 //! and receive real-time GPS + IMU telemetry data.
 
-use super::data::GpsData;
+use super::data::{GpsData, SatelliteInfo};
 use anyhow::Result;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::StreamExt;
@@ -14,6 +14,15 @@ use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, Web
 
 pub type WebSocketSink = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 pub type WebSocketRead = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
+
+/// Satellite detail from OpenPonyLogger
+#[derive(Debug, Deserialize)]
+pub struct SatelliteDetail {
+    pub prn: u8,
+    pub elevation: i32,
+    pub azimuth: i32,
+    pub snr: Option<i32>,
+}
 
 /// OpenPonyLogger telemetry JSON structure
 #[derive(Debug, Deserialize)]
@@ -35,6 +44,9 @@ pub struct OpenPonyTelemetry {
     pub rx: Option<f64>,
     pub ry: Option<f64>,
     pub rz: Option<f64>,
+
+    // Satellite details (sent periodically for skyplot)
+    pub satellite_details: Option<Vec<SatelliteDetail>>,
 }
 
 /// Connect to OpenPonyLogger WebSocket server
@@ -70,6 +82,22 @@ pub fn parse_openpony_json(data: &mut GpsData, json: &str) -> Result<()> {
     // IMU data - gyroscope
     if let (Some(rx), Some(ry), Some(rz)) = (telemetry.rx, telemetry.ry, telemetry.rz) {
         data.rotation = Some((rx, ry, rz));
+    }
+
+    // Satellite details (sent periodically for skyplot visualization)
+    if let Some(sat_details) = telemetry.satellite_details {
+        data.satellites_info = sat_details
+            .into_iter()
+            .map(|sat| {
+                let mut info = SatelliteInfo::new(sat.prn);
+                info.elevation = Some(sat.elevation as f32);
+                info.azimuth = Some(sat.azimuth as f32);
+                info.snr = sat.snr.map(|s| s as f32);
+                // Mark satellites with SNR as "used" in fix
+                info.used = sat.snr.is_some();
+                info
+            })
+            .collect();
     }
 
     // Set source
