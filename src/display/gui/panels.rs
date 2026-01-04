@@ -2,6 +2,7 @@
 //! Main GPS data panel rendering
 
 use crate::gps::GpsData;
+use chrono::TimeZone;
 use eframe::egui;
 
 fn format_coordinate(coord: Option<f64>) -> String {
@@ -19,6 +20,44 @@ fn format_value<T: std::fmt::Display>(value: Option<T>, unit: &str) -> String {
 }
 
 pub fn render_main_data_panel(ui: &mut egui::Ui, data: &GpsData) {
+    // Large GPS Time Display
+    ui.vertical_centered(|ui| {
+        ui.add_space(5.0);
+
+        let time_text = match data.timestamp {
+            Some(ts) => {
+                let local_time = ts.with_timezone(&chrono::Local);
+                format!("{}", local_time.format("%H:%M:%S"))
+            }
+            None => "No GPS Time".to_string(),
+        };
+
+        // Large time display with custom font size
+        ui.heading(egui::RichText::new("🕐 GPS Time").size(16.0));
+        ui.label(
+            egui::RichText::new(time_text)
+                .size(48.0)
+                .strong()
+                .monospace()
+                .color(egui::Color32::from_rgb(100, 200, 255))
+        );
+
+        // Show date below time
+        if let Some(ts) = data.timestamp {
+            let local_time = ts.with_timezone(&chrono::Local);
+            ui.label(
+                egui::RichText::new(format!("{}", local_time.format("%Y-%m-%d")))
+                    .size(14.0)
+                    .color(egui::Color32::GRAY)
+            );
+        }
+
+        ui.add_space(5.0);
+    });
+
+    ui.separator();
+    ui.add_space(10.0);
+
     ui.strong("📍 Position & Movement");
     ui.separator();
 
