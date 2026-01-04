@@ -7,7 +7,6 @@
 use super::data::{GpsData, SatelliteInfo};
 use anyhow::Result;
 use futures_util::stream::{SplitSink, SplitStream};
-use futures_util::StreamExt;
 use serde::Deserialize;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
