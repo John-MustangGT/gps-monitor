@@ -33,7 +33,7 @@ impl GpsConfig {
                 serial_baudrate: Some(9600),
                 gpsd_host: Some("localhost".to_string()),
                 gpsd_port: Some(2947),
-                openpony_url: Some("ws://192.168.4.1:80".to_string()),
+                openpony_url: Some("ws://192.168.4.1/ws".to_string()),
                 windows_accuracy: Some(10),
                 windows_interval: Some(1),
             }
@@ -47,7 +47,7 @@ impl GpsConfig {
                 serial_baudrate: Some(9600),
                 gpsd_host: Some("localhost".to_string()),
                 gpsd_port: Some(2947),
-                openpony_url: Some("ws://192.168.4.1:80".to_string()),
+                openpony_url: Some("ws://192.168.4.1/ws".to_string()),
                 windows_accuracy: Some(10),
                 windows_interval: Some(1),
             }

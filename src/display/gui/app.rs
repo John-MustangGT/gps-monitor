@@ -147,7 +147,7 @@ impl GpsGuiApp {
                 GpsSource::Gpsd { host, port }
             }
             "openpony" => {
-                let url = self.config.openpony_url.clone().unwrap_or_else(|| "ws://192.168.4.1:80".to_string());
+                let url = self.config.openpony_url.clone().unwrap_or_else(|| "ws://192.168.4.1/ws".to_string());
                 GpsSource::OpenPony { url }
             }
             #[cfg(windows)]

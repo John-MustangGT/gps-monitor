@@ -56,7 +56,7 @@ impl SettingsWindow {
             serial_baudrate: config.serial_baudrate.map_or("9600".to_string(), |b| b.to_string()),
             gpsd_host: config.gpsd_host.clone().unwrap_or_else(|| "localhost".to_string()),
             gpsd_port: config.gpsd_port.map_or("2947".to_string(), |p| p.to_string()),
-            openpony_url: config.openpony_url.clone().unwrap_or_else(|| "ws://192.168.4.1:80".to_string()),
+            openpony_url: config.openpony_url.clone().unwrap_or_else(|| "ws://192.168.4.1/ws".to_string()),
             #[cfg(windows)]
             windows_accuracy: config.windows_accuracy.map_or("10".to_string(), |a| a.to_string()),
             #[cfg(windows)]
@@ -215,7 +215,7 @@ impl SettingsWindow {
             });
 
         ui.add_space(5.0);
-        ui.small("Default: ws://192.168.4.1:80 (OpenPonyLogger access point)");
+        ui.small("Default: ws://192.168.4.1/ws (OpenPonyLogger access point)");
         ui.small("Receives GPS + IMU telemetry (accelerometer, gyroscope, magnetometer)");
     }
 
