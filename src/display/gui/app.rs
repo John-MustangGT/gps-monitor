@@ -215,7 +215,14 @@ impl GpsGuiApp {
                         self.stop_connection();
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
-                    
+
+                    // Fullscreen toggle
+                    let is_fullscreen = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+                    let fullscreen_button_text = if is_fullscreen { "🗗 Windowed" } else { "🗖 Fullscreen" };
+                    if ui.button(fullscreen_button_text).clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!is_fullscreen));
+                    }
+
                     if ui.button("⚙ Settings").clicked() {
                         self.settings_window.open = true;
                     }
@@ -223,7 +230,7 @@ impl GpsGuiApp {
                     if ui.button("📍 Waypoints").clicked() {
                         self.waypoint_dialog.open = true;
                     }
-                    
+
                     if ui.button("🗺 Map").clicked() {
                         self.map_window.open = true;
                     }

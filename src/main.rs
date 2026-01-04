@@ -12,18 +12,31 @@ fn main() {
 
 #[cfg(feature = "gui")]
 fn main() -> Result<()> {
+    // Parse command line arguments
+    let args: Vec<String> = std::env::args().collect();
+    let start_fullscreen = args.iter().any(|arg| arg == "--fullscreen" || arg == "-f");
+
     // Load configuration
     let config = GpsConfig::load().unwrap_or_default();
-    
+
     println!("Starting GPS Monitor...");
     println!("Using {} source", config.source_type);
-    
+    if start_fullscreen {
+        println!("Starting in fullscreen mode");
+    }
+
     // Create and run the egui application
+    let mut viewport_builder = eframe::egui::ViewportBuilder::default()
+        .with_inner_size([1024.0, 768.0])
+        .with_title("GPS Monitor")
+        .with_min_inner_size([800.0, 600.0]);
+
+    if start_fullscreen {
+        viewport_builder = viewport_builder.with_fullscreen(true);
+    }
+
     let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_inner_size([1024.0, 768.0])
-            .with_title("GPS Monitor")
-            .with_min_inner_size([800.0, 600.0]),
+        viewport: viewport_builder,
         ..Default::default()
     };
 
